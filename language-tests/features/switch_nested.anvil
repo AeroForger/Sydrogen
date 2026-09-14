@@ -1,0 +1,19 @@
+Open Nunction Main()
+{
+    Switch (2)
+    {
+        Case 1 -> Print("FAIL: outer first case");
+        Case 2
+        {
+            Switch (4)
+            {
+                Case 3 -> Print("FAIL: inner first case");
+                Case 4 -> Print("nested match");
+                Base -> Print("FAIL: inner base");
+            }
+            Print("after inner");
+        }
+        Base -> Print("FAIL: outer base");
+    }
+    Print("after outer");
+}

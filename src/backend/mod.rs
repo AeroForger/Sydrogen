@@ -76,6 +76,10 @@ pub fn program_uses_error_handling(program: &Program) -> bool {
             Statement::While(node) => statements_use_errors(&node.body),
             Statement::For(node) => statements_use_errors(&node.body),
             Statement::ForEach(node) => statements_use_errors(&node.body),
+            Statement::Switch(node) => node.branches.iter().any(|branch| match branch {
+                crate::ast::SwitchBranch::Case(case) => statements_use_errors(&case.body),
+                crate::ast::SwitchBranch::Base(body) => statements_use_errors(body),
+            }),
             _ => false,
         })
     }
@@ -131,6 +135,18 @@ fn windows_unsupported_statement(statement: &Statement) -> bool {
                 || node.body.iter().any(windows_unsupported_statement)
         }
         Statement::ForEach(node) => node.body.iter().any(windows_unsupported_statement),
+        Statement::Switch(node) => {
+            windows_unsupported_expr(&node.expression)
+                || node.branches.iter().any(|branch| match branch {
+                    crate::ast::SwitchBranch::Case(case) => {
+                        case.values.iter().any(windows_unsupported_expr)
+                            || case.body.iter().any(windows_unsupported_statement)
+                    }
+                    crate::ast::SwitchBranch::Base(body) => {
+                        body.iter().any(windows_unsupported_statement)
+                    }
+                })
+        }
         Statement::Do(node) => {
             node.body.iter().any(windows_unsupported_statement)
                 || node
@@ -291,6 +307,18 @@ fn statement_requires_typed_backend(statement: &Statement) -> bool {
         // Collection storage and element types are implemented by the typed
         // backend. The native CLI transparently routes this statement there.
         Statement::ForEach(_) => true,
+        Statement::Switch(node) => {
+            expr_requires_typed_backend(&node.expression)
+                || node.branches.iter().any(|branch| match branch {
+                    crate::ast::SwitchBranch::Case(case) => {
+                        case.values.iter().any(expr_requires_typed_backend)
+                            || case.body.iter().any(statement_requires_typed_backend)
+                    }
+                    crate::ast::SwitchBranch::Base(body) => {
+                        body.iter().any(statement_requires_typed_backend)
+                    }
+                })
+        }
         Statement::Do(node) => {
             node.body.iter().any(statement_requires_typed_backend)
                 || node

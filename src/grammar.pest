@@ -19,6 +19,7 @@ statement  = {
     | object_decl
     | print_stmt
     | foreach_stmt
+    | switch_stmt
     | do_stmt
     | throw_stmt
     | for_stmt
@@ -85,6 +86,11 @@ if_stmt         = { kw_if ~ "(" ~ expr ~ ")" ~ block
 while_stmt      = { kw_while ~ "(" ~ expr ~ ")" ~ block }
 for_stmt        = { kw_for ~ "(" ~ for_init ~ ";" ~ expr ~ ";" ~ for_increment ~ ")" ~ block }
 foreach_stmt    = { kw_foreach ~ "(" ~ type_decl ~ ident ~ kw_in ~ ident ~ ")" ~ block }
+switch_stmt     = { kw_switch ~ "(" ~ expr ~ ")" ~ "{" ~ switch_branch* ~ "}" }
+switch_branch   = _{ switch_case | switch_base }
+switch_case     = { kw_case ~ ("->" ~ case_values ~ ":" ~ statement | case_values ~ ("->" ~ statement | block)) }
+case_values     = { expr ~ (kw_case_or ~ expr)* }
+switch_base     = { kw_base ~ ("->" ~ statement | block) }
 for_init        = { modifier? ~ type_decl ~ ident ~ ("=" ~ expr)? }
 for_increment   = { ident ~ incr_op }
 incr_op         = { "++" | "--" }
@@ -160,6 +166,8 @@ kw_while      = ${ "While" ~ !ident_char }
 kw_else       = ${ "Else" ~ !ident_char }
 kw_switch     = ${ "Switch" ~ !ident_char }
 kw_deal       = ${ "Deal" ~ !ident_char }
+kw_case       = ${ "Case" ~ !ident_char }
+kw_case_or    = ${ "or" ~ !ident_char }
 kw_base       = ${ "Base" ~ !ident_char }
 kw_do         = ${ "Do" ~ !ident_char }
 kw_catch      = ${ "Catch" ~ !ident_char }
@@ -197,7 +205,7 @@ ident_char         = _{ ASCII_ALPHANUMERIC | "_" }
 keyword            = _{ 
     kw_open | kw_closed | kw_showcase | kw_number | kw_weld | kw_string | kw_ore
     | kw_materials | kw_data | kw_int | kw_float | kw_generic | kw_function
-    | kw_nunction | kw_return | kw_if | kw_while | kw_else | kw_switch | kw_deal
+    | kw_nunction | kw_return | kw_if | kw_while | kw_else | kw_switch | kw_deal | kw_case
     | kw_base | kw_do | kw_catch | kw_finally | kw_throw | kw_error
     | kw_invalid_value | kw_division_by_zero | kw_overflow | kw_io
     | kw_fail | kw_final | kw_and | kw_or | kw_xor

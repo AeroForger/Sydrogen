@@ -1093,6 +1093,93 @@ impl<'a, 'ctx> FunctionCompiler<'a, 'ctx> {
                 self.builder.switch_to_block(merge_block);
                 self.builder.seal_block(merge_block);
             }
+            Statement::Switch(switch_node) => {
+                // Compile before any Case checks so calls and other side effects
+                // in the selector occur exactly once.
+                let switch_value = self.compile_expr(&switch_node.expression)?;
+                let switch_is_float = self.is_float_expr(&switch_node.expression);
+                let merge_block = self.builder.create_block();
+                let is_top_level_switch = self.break_targets.is_empty();
+                if is_top_level_switch {
+                    self.break_targets.push(merge_block);
+                }
+
+                let cases: Vec<_> = switch_node
+                    .branches
+                    .iter()
+                    .filter_map(|branch| match branch {
+                        SwitchBranch::Case(case) => Some(case),
+                        SwitchBranch::Base(_) => None,
+                    })
+                    .collect();
+                let base_body = switch_node.branches.iter().find_map(|branch| match branch {
+                    SwitchBranch::Base(body) => Some(body),
+                    SwitchBranch::Case(_) => None,
+                });
+                let case_blocks: Vec<_> = (0..cases.len())
+                    .map(|_| self.builder.create_block())
+                    .collect();
+                let base_block = base_body.map(|_| self.builder.create_block());
+                let checks: Vec<_> = cases
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(case_index, case)| {
+                        case.values.iter().map(move |value| (case_index, value))
+                    })
+                    .collect();
+
+                for (index, (case_index, pattern)) in checks.iter().enumerate() {
+                    let pattern_value = self.compile_expr(pattern)?;
+                    let matches = if switch_is_float {
+                        self.builder
+                            .ins()
+                            .fcmp(FloatCC::Equal, switch_value, pattern_value)
+                    } else {
+                        self.builder
+                            .ins()
+                            .icmp(IntCC::Equal, switch_value, pattern_value)
+                    };
+                    let no_match = if index + 1 < checks.len() {
+                        self.builder.create_block()
+                    } else {
+                        base_block.unwrap_or(merge_block)
+                    };
+                    self.builder
+                        .ins()
+                        .brif(matches, case_blocks[*case_index], &[], no_match, &[]);
+                    if index + 1 < checks.len() {
+                        self.builder.switch_to_block(no_match);
+                        self.builder.seal_block(no_match);
+                    }
+                }
+                if checks.is_empty() {
+                    self.builder
+                        .ins()
+                        .jump(base_block.unwrap_or(merge_block), &[]);
+                }
+
+                for (case, block) in cases.iter().zip(&case_blocks) {
+                    self.builder.switch_to_block(*block);
+                    self.builder.seal_block(*block);
+                    let terminated = self.compile_block(&case.body)?;
+                    if !terminated {
+                        self.builder.ins().jump(merge_block, &[]);
+                    }
+                }
+                if let (Some(body), Some(block)) = (base_body, base_block) {
+                    self.builder.switch_to_block(block);
+                    self.builder.seal_block(block);
+                    let terminated = self.compile_block(body)?;
+                    if !terminated {
+                        self.builder.ins().jump(merge_block, &[]);
+                    }
+                }
+                if is_top_level_switch {
+                    self.break_targets.pop();
+                }
+                self.builder.switch_to_block(merge_block);
+                self.builder.seal_block(merge_block);
+            }
             Statement::While(while_node) => {
                 let header_block = self.builder.create_block();
                 let body_block = self.builder.create_block();
@@ -2249,6 +2336,22 @@ fn collect_strings(
             if let Some(else_body) = &if_node.else_body {
                 for s in else_body {
                     collect_strings(s, string_map, ctx, clif_ctx)?;
+                }
+            }
+        }
+        Statement::Switch(node) => {
+            collect_strings_in_expr(&node.expression, string_map, ctx, clif_ctx)?;
+            for branch in &node.branches {
+                match branch {
+                    SwitchBranch::Case(case) => {
+                        for value in &case.values {
+                            collect_strings_in_expr(value, string_map, ctx, clif_ctx)?;
+                        }
+                        collect_strings_in_body(&case.body, string_map, ctx, clif_ctx)?;
+                    }
+                    SwitchBranch::Base(body) => {
+                        collect_strings_in_body(body, string_map, ctx, clif_ctx)?;
+                    }
                 }
             }
         }

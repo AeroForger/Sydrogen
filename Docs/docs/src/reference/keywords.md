@@ -21,6 +21,9 @@ This page summarizes the keywords and reserved terms that appear in the current 
 | `Generic` | Generic list element type |
 | `If` | Conditional statement |
 | `Else` | Conditional fallback |
+| `Switch` | Evaluates one value and selects the first matching Case |
+| `Case` | Introduces one or more values in a Switch |
+| `Base` | Final fallback branch in a Switch |
 | `While` | While loop |
 | `For` | For loop |
 | `Do` | Introduces a protected error-handling block |
@@ -34,7 +37,7 @@ This page summarizes the keywords and reserved terms that appear in the current 
 | `Using` | Imported symbol from a module |
 | `Data` | Structured data declaration |
 
-A number of these keywords are present in the parser or AST, but not yet fully implemented in every backend. See [Error Handling](../language/error-handling.md), [Current Limitations](../limitations.md), and the language chapters for the current status.
+A number of these keywords are present in the parser or AST, but not yet fully implemented in every backend. See [Switch Statements](../language/switch.md), [Error Handling](../language/error-handling.md), [Current Limitations](../limitations.md), and the language chapters for the current status.
 
 ---
 

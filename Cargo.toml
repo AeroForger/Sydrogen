@@ -1,6 +1,6 @@
 [package]
 name = "furnace"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 description = "Compiler for the Sydrogen systems programming language"
 license = "GPL-3.0-only"

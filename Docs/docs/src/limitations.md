@@ -1,12 +1,12 @@
 # Current Limitations
 
-Alpha-6 is an early development release.
+Alpha-7 is an early development release.
 
 The following features are not currently fully implemented in the backend:
 
 - `Data` declaration code generation
 - Object instantiation code generation
-- `Switch` / `Deal` / `Base` pattern matching
+- `Deal` remains reserved for possible future pattern-matching syntax; implemented `Switch` statements use `Case` and `Base`
 - Error handling in the Cranelift backend
 - Windows top-level uncaught-error printing
 - `Finally` handling for `Stop` and `Skip`

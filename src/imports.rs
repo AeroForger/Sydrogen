@@ -611,6 +611,29 @@ fn rewrite_statement(
         Statement::ForEach(node) => {
             rewrite_body(&mut node.body, module_index, module, table, symbols, scope)?
         }
+        Statement::Switch(node) => {
+            rewrite_expr(
+                &mut node.expression,
+                module_index,
+                module,
+                table,
+                symbols,
+                scope,
+            )?;
+            for branch in &mut node.branches {
+                match branch {
+                    crate::ast::SwitchBranch::Case(case) => {
+                        for value in &mut case.values {
+                            rewrite_expr(value, module_index, module, table, symbols, scope)?;
+                        }
+                        rewrite_body(&mut case.body, module_index, module, table, symbols, scope)?;
+                    }
+                    crate::ast::SwitchBranch::Base(body) => {
+                        rewrite_body(body, module_index, module, table, symbols, scope)?;
+                    }
+                }
+            }
+        }
         Statement::Do(node) => {
             rewrite_body(&mut node.body, module_index, module, table, symbols, scope)?;
             for catch in &mut node.catches {

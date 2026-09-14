@@ -20,12 +20,12 @@ fi
 
 # version output
 actual="$($BIN -version 2>&1)"
-[ "$actual" = "Furnace Alpha-6" ] || fail "-version output mismatch: '$actual'"
+[ "$actual" = "Furnace Alpha-7" ] || fail "-version output mismatch: '$actual'"
 
 # help output
 help_actual="$($BIN -help 2>&1)"
-printf '%s\n' "$help_actual" | grep -q "Furnace Alpha-6" || fail "-help is missing banner"
-printf '%s\n' "$help_actual" | grep -q "Furnace compile <file>.anvil <platform>" || fail "-help is missing compile usage"
+printf '%s\n' "$help_actual" | grep -q "Furnace Alpha-7" || fail "-help is missing banner"
+printf '%s\n' "$help_actual" | grep -q "Furnace compile <file>.anvil \[linux|windows\]" || fail "-help is missing compile usage"
 printf '%s\n' "$help_actual" | grep -q "Furnace build <project>.blower" || fail "-help is missing build usage"
 printf '%s\n' "$help_actual" | grep -q "Furnace run <file>.anvil" || fail "-help is missing run usage"
 printf '%s\n' "$help_actual" | grep -q "Furnace backend <native|cranelift>" || fail "-help is missing backend usage"
@@ -119,8 +119,68 @@ if $BIN compile "$TMPDIR/invalid.txt" linux >/dev/null 2>&1; then
     fail "compile with non-anvil file should fail"
 fi
 
-# bad platform
-if $BIN compile "$SRC" windows >/dev/null 2>&1; then
+# Windows cross-compilation through both supported target spellings.
+WINDOWS_POSITIONAL_SRC="$TMPDIR/windows-positional.anvil"
+cat > "$WINDOWS_POSITIONAL_SRC" <<'EOF'
+Open Int Main()
+{
+    Return 7;
+}
+EOF
+if ! (cd "$TMPDIR" && "$BIN" compile "$WINDOWS_POSITIONAL_SRC" windows --backend native >/dev/null 2>&1); then
+    fail "positional Windows cross-compilation failed"
+fi
+WINDOWS_POSITIONAL_OUT="$TMPDIR/windows-positional.exe"
+[ -f "$WINDOWS_POSITIONAL_OUT" ] || fail "positional Windows compilation did not create .exe output"
+[ "$(od -An -t x1 -N2 "$WINDOWS_POSITIONAL_OUT" | tr -d ' ')" = "4d5a" ] || fail "positional Windows output is not PE/MZ"
+
+WINDOWS_FLAG_SRC="$TMPDIR/windows-flag.anvil"
+cat > "$WINDOWS_FLAG_SRC" <<'EOF'
+Open Int Main()
+{
+    Return 9;
+}
+EOF
+if ! (cd "$TMPDIR" && "$BIN" compile "$WINDOWS_FLAG_SRC" --windows --backend native >/dev/null 2>&1); then
+    fail "--windows cross-compilation failed"
+fi
+WINDOWS_FLAG_OUT="$TMPDIR/windows-flag.exe"
+[ -f "$WINDOWS_FLAG_OUT" ] || fail "--windows compilation did not create .exe output"
+[ "$(od -An -t x1 -N2 "$WINDOWS_FLAG_OUT" | tr -d ' ')" = "4d5a" ] || fail "--windows output is not PE/MZ"
+
+# Typed errors use the direct native backend and must continue to work inside Switch.
+ERROR_SRC="$TMPDIR/typed-errors.anvil"
+cat > "$ERROR_SRC" <<'EOF'
+Open Int Main()
+{
+    Do
+    {
+        Switch (0)
+        {
+            Case 0 -> Throw Error.InvalidValue("zero is invalid");
+            Base -> Print("FAIL: typed error base");
+        }
+    }
+    Catch Error.InvalidValue => Problem
+    {
+        Print(Problem);
+    }
+    Finally
+    {
+        Print("cleanup");
+    }
+    Return 0;
+}
+EOF
+if ! (cd "$TMPDIR" && "$BIN" compile "$ERROR_SRC" linux --backend native >/dev/null 2>&1); then
+    fail "native typed-error compilation failed"
+fi
+error_actual="$($TMPDIR/typed-errors 2>&1)"
+error_expected=$'zero is invalid\ncleanup'
+[ "$error_actual" = "$error_expected" ] || fail "typed-error output mismatch: '$error_actual'"
+
+# Truly unsupported positional targets still fail.
+if $BIN compile "$SRC" macos >/dev/null 2>&1; then
     fail "compile with unsupported platform should fail"
 fi
 

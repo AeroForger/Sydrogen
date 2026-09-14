@@ -47,7 +47,9 @@ Else
 
 Conditions must evaluate to a valid condition for the current compiler. In other words, a condition must be a type the compiler can evaluate as truthy or falsey in the current backend.
 
+For selecting among several exact values, see [Switch Statements](switch.md).
+
 ---
 
 [← Previous](logical.md)
-[Next →](while.md)
+[Next →](switch.md)

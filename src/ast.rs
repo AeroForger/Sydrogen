@@ -99,6 +99,7 @@ pub enum Statement {
     While(WhileNode),
     For(ForNode),
     ForEach(ForEachNode),
+    Switch(SwitchNode),
     Do(DoNode),
     Throw(ErrorValue),
     Return(Option<Expr>),
@@ -251,6 +252,26 @@ pub struct InputNode {
 pub struct IfNode {
     pub branches: Vec<(Expr, Vec<Statement>)>,
     pub else_body: Option<Vec<Statement>>,
+}
+
+/// An ordered Switch. Keeping Base in the branch list preserves malformed
+/// ordering and duplicates for semantic analysis to diagnose.
+#[derive(Debug, Clone)]
+pub struct SwitchNode {
+    pub expression: Expr,
+    pub branches: Vec<SwitchBranch>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SwitchBranch {
+    Case(SwitchCaseNode),
+    Base(Vec<Statement>),
+}
+
+#[derive(Debug, Clone)]
+pub struct SwitchCaseNode {
+    pub values: Vec<Expr>,
+    pub body: Vec<Statement>,
 }
 
 #[derive(Debug, Clone)]

@@ -6,7 +6,7 @@ Sydrogen source files use the `.anvil` extension. If you drop one on the floor, 
 
 The compiler is **Furnace**.
 
-> **Status:** Sydrogen Alpha-6 \
+> **Status:** Sydrogen Alpha-7 \
 > **Compiler:** Furnace \
 > **Implementation:** Rust \
 > **Parser:** pest \
@@ -23,7 +23,7 @@ Furnace is the name of the Sydrogen compiler. The current generation is written 
 
 ## Current Version
 
-This documentation describes **Alpha-6** of Sydrogen and the corresponding release of Furnace.
+This documentation describes **Alpha-7** of Sydrogen and the corresponding release of Furnace.
 
 ## Source Files
 
@@ -48,7 +48,7 @@ Furnace is divided into several stages:
 * **Cranelift** generates a native object file for programs that need the typed path.
 * **cc** (the system C compiler) links that object file into an executable.
 
-Alpha-6 uses:
+Alpha-7 uses:
 
 * **Rust** for the compiler
 * **pest** for parsing

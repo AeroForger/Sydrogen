@@ -1,0 +1,8 @@
+Open Nunction Main()
+{
+    Switch (2)
+    {
+        Case 1 or 2 {}
+        Case 2 {}
+    }
+}

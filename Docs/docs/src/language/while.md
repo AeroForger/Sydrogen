@@ -53,5 +53,5 @@ The compiler using multiple CPU cores for semantic analysis does not make the ge
 
 ---
 
-[← Previous](conditionals.md)
+[← Previous](switch.md)
 [Next →](for.md)

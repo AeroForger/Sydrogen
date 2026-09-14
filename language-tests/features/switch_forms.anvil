@@ -1,0 +1,74 @@
+Int Selector()
+{
+    Print("selector evaluated");
+    Return 3;
+}
+
+Open Nunction Main()
+{
+    Switch (1)
+    {
+        Case 1
+        {
+            Print("block case");
+        }
+        Base -> Print("FAIL: block case base");
+    }
+
+    Switch (2)
+    {
+        Case 1 -> Print("FAIL: first arrow case");
+        Case 2 -> Print("arrow case");
+        Base -> Print("FAIL: arrow case base");
+    }
+
+    Switch (3)
+    {
+        Case -> 3: Print("alternate arrow case");
+        Base -> Print("FAIL: alternate arrow base");
+    }
+
+    Switch (5)
+    {
+        Case 4 or 5
+        {
+            Print("multiple block case");
+        }
+        Base -> Print("FAIL: multiple block base");
+    }
+
+    Switch (7)
+    {
+        Case 6 or 7 -> Print("multiple arrow case");
+        Base -> Print("FAIL: multiple arrow base");
+    }
+
+    Switch (99)
+    {
+        Case 1 -> Print("FAIL: block base case");
+        Base
+        {
+            Print("block base");
+        }
+    }
+
+    Switch (98)
+    {
+        Case 1 -> Print("FAIL: arrow base case");
+        Base -> Print("arrow base");
+    }
+
+    Switch (42)
+    {
+        Case 1 -> Print("FAIL: unmatched case");
+    }
+
+    Switch (Selector())
+    {
+        Case 1 -> Print("FAIL: selector first case");
+        Case 2 or 3 -> Print("selector matched");
+        Base -> Print("FAIL: selector base");
+    }
+
+    Print("after switches");
+}

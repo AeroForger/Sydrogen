@@ -1,6 +1,6 @@
 # Types
 
-Alpha-6 currently includes primitive types, arrays, tuples, lists, and a limited generic type.
+Alpha-7 currently includes primitive types, arrays, tuples, lists, and a limited generic type.
 
 ## Primitive Types
 

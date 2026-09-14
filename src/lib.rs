@@ -1,4 +1,4 @@
-pub const VERSION: &str = "Alpha-6";
+pub const VERSION: &str = "Alpha-7";
 
 pub mod ast;
 pub mod backend;

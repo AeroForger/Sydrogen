@@ -1,6 +1,6 @@
 # Complete Example
 
-The following program demonstrates several features available in Alpha-6:
+The following program demonstrates several features available in Alpha-7:
 
 - `Nunction`
 - Variables
@@ -108,7 +108,7 @@ Open Nunction Main()
 }
 ```
 
-This example represents the current Alpha-6 subset. Some features are still planned or parser-only, so the example shows what the compiler currently handles.
+This example represents the current Alpha-7 subset. Some features are still planned or parser-only, so the example shows what the compiler currently handles.
 
 ---
 

@@ -1,0 +1,10 @@
+Open Nunction Main()
+{
+    Bool Enabled = true;
+    Switch (Enabled)
+    {
+        Case false -> Print("FAIL: false");
+        Case true -> Print("true case");
+        Base -> Print("FAIL: bool base");
+    }
+}

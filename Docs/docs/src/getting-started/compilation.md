@@ -165,7 +165,7 @@ Furnace exposes its version through centralized compiler metadata.
 The current version is:
 
 ```rust
-pub const VERSION: &str = "Alpha-6";
+pub const VERSION: &str = "Alpha-7";
 ```
 
 Version information can be requested with:
@@ -183,7 +183,7 @@ Help can be requested with:
 Example version output:
 
 ```text
-Furnace Alpha-6
+Furnace Alpha-7
 ```
 
 Usage:

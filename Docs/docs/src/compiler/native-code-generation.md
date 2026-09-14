@@ -41,7 +41,7 @@ The internal representation contains:
 - typed error status, message, and type-name operations
 - an error-propagation terminator
 
-The lowerer turns `If`, `While`, and `For` statements into basic blocks. Each branch gets a label, and each loop has a condition block and an exit block. At this stage the code still uses virtual registers and does not contain x86-64 instruction bytes.
+The lowerer turns `If`, `Switch`, `While`, and `For` statements into basic blocks. Switch evaluates its selector once, emits ordered equality checks, and directs every completed Case to one shared exit block. Each branch gets a label, and each loop has a condition block and an exit block. At this stage the code still uses virtual registers and does not contain x86-64 instruction bytes.
 
 ## 2. Placing values
 
@@ -147,7 +147,8 @@ The Windows target has additional limits: `Print`, `Input`, and
 `Data`, and objects use a Linux-only typed/linker fallback. Furnace rejects
 these constructs for Windows. Integer, Boolean, and `Weld` values, variables,
 arithmetic, comparisons, branches, loops, and direct Sydrogen function calls
-are supported.
+are supported. Integer and Boolean Switch statements use this same shared
+control-flow lowering on both executable formats.
 
 Typed error dispatch, nested propagation, and `Finally` control flow are
 lowered into ordinary IR blocks and supported by the direct backend on both

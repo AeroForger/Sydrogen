@@ -1,9 +1,9 @@
 [book]
-title = "Sydrogen Alpha-6"
+title = "Sydrogen Alpha-7"
 authors = ["Sydrogen Contributors"]
 language = "en"
 src = "src"
-description = "Official documentation for the Sydrogen Alpha-6 programming language and its Furnace compiler."
+description = "Official documentation for the Sydrogen Alpha-7 programming language and its Furnace compiler."
 
 [build]
 build-dir = "book"

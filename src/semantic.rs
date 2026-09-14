@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::ast::{
     AssignmentTarget, BinOp, Expr, ForEachNode, ForNode, FunctionDecl, Param, Program, RetKind,
-    Statement, Subtype, TypeDecl,
+    Statement, Subtype, SwitchBranch, SwitchNode, TypeDecl, UnOp,
 };
 use crate::errors::{ForgeError, ForgeResult};
 
@@ -80,6 +80,15 @@ fn collect_var_types(statements: &[Statement], scope: &mut Scope) {
             }
             Statement::ForEach(node) => {
                 collect_var_types(&node.body, scope);
+            }
+            Statement::Switch(node) => {
+                for branch in &node.branches {
+                    let body = match branch {
+                        SwitchBranch::Case(case) => &case.body,
+                        SwitchBranch::Base(body) => body,
+                    };
+                    collect_var_types(body, scope);
+                }
             }
             Statement::Do(node) => {
                 collect_var_types(&node.body, scope);
@@ -611,6 +620,9 @@ fn validate_statement(
         Statement::ForEach(node) => {
             validate_foreach_stmt(node, scope, program, context)?;
         }
+        Statement::Switch(node) => {
+            validate_switch_stmt(node, scope, program, context)?;
+        }
         Statement::Do(node) => {
             if node.catches.is_empty() && node.finally_body.is_none() {
                 return Err(ForgeError::parse(
@@ -760,6 +772,123 @@ fn validate_statement(
         _ => {}
     }
     Ok(())
+}
+
+fn validate_switch_stmt(
+    node: &SwitchNode,
+    scope: &Scope,
+    program: &Program,
+    context: ValidationContext,
+) -> ForgeResult<()> {
+    validate_expr(&node.expression, scope, program, context)?;
+    let switch_type = expr_type(&node.expression, scope, program);
+    if !matches!(
+        switch_type,
+        ExprType::Number(Subtype::Int | Subtype::Float) | ExprType::Bool
+    ) {
+        return Err(ForgeError::parse(format!(
+            "Switch currently supports Int, Float, or Bool expressions, got {}",
+            switch_type.name()
+        )));
+    }
+
+    let branch_context = ValidationContext {
+        in_loop_or_if: true,
+        ..context
+    };
+    let mut base_seen = false;
+    let mut values_seen = std::collections::HashSet::new();
+    for branch in &node.branches {
+        match branch {
+            SwitchBranch::Case(case) => {
+                if base_seen {
+                    return Err(ForgeError::parse(
+                        "Base must be the final branch in a Switch",
+                    ));
+                }
+                if case.values.is_empty() {
+                    return Err(ForgeError::parse("Case requires at least one value"));
+                }
+                for value in &case.values {
+                    validate_expr(value, scope, program, context)?;
+                    let case_type = expr_type(value, scope, program);
+                    if case_type != switch_type {
+                        return Err(ForgeError::parse(format!(
+                            "Switch Case type mismatch: expected {}, got {}",
+                            switch_type.name(),
+                            case_type.name()
+                        )));
+                    }
+                    if let Some(key) = constant_case_key(value) {
+                        if !values_seen.insert(key) {
+                            return Err(ForgeError::parse(format!(
+                                "duplicate Case value: {}",
+                                display_case_value(value)
+                            )));
+                        }
+                    }
+                }
+                validate_statements(&case.body, scope, program, branch_context)?;
+            }
+            SwitchBranch::Base(body) => {
+                if base_seen {
+                    return Err(ForgeError::parse("Switch may contain only one Base branch"));
+                }
+                base_seen = true;
+                validate_statements(body, scope, program, branch_context)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn constant_case_key(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Number(number) if number.is_float => {
+            Some(format!("float:{:016x}", number.float_val.to_bits()))
+        }
+        Expr::Number(number) => Some(format!("int:{}", number.int_val)),
+        Expr::Bool(value) => Some(format!("bool:{}", value)),
+        Expr::Str(parts)
+            if parts
+                .iter()
+                .all(|part| matches!(part, crate::ast::StringPart::Literal(_))) =>
+        {
+            let value = parts
+                .iter()
+                .filter_map(|part| match part {
+                    crate::ast::StringPart::Literal(value) => Some(value.as_str()),
+                    _ => None,
+                })
+                .collect::<String>();
+            Some(format!("weld:{}", value))
+        }
+        Expr::UnaryOp {
+            op: UnOp::Plus,
+            operand,
+        } => constant_case_key(operand),
+        Expr::UnaryOp {
+            op: UnOp::Neg,
+            operand,
+        } => match operand.as_ref() {
+            Expr::Number(number) if number.is_float => {
+                Some(format!("float:{:016x}", (-number.float_val).to_bits()))
+            }
+            Expr::Number(number) => Some(format!("int:{}", -number.int_val)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn display_case_value(expr: &Expr) -> String {
+    match expr {
+        Expr::Number(number) if number.is_float => number.float_val.to_string(),
+        Expr::Number(number) => number.int_val.to_string(),
+        Expr::Bool(value) => value.to_string(),
+        Expr::Str(_) => "Weld literal".to_string(),
+        _ => "expression".to_string(),
+    }
 }
 
 fn validate_for_stmt(

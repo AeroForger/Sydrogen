@@ -29,6 +29,7 @@
 - [Comparisons](language/comparisons.md)
 - [Logical Operators](language/logical.md)
 - [Conditionals](language/conditionals.md)
+- [Switch Statements](language/switch.md)
 - [While Loops](language/while.md)
 - [For Loops](language/for.md)
 - [ForEach Loops](language/for-each.md)
@@ -65,5 +66,5 @@
 # Project Status
 
 - [Current Limitations](limitations.md)
-- [Alpha-6 Roadmap](roadmap.md)
+- [Alpha-7 Roadmap](roadmap.md)
 - [Implementation Notes](implementation-notes.md)

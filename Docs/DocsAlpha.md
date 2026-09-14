@@ -1,4 +1,4 @@
-# Sydrogen Alpha-6 Language Documentation
+# Sydrogen Alpha-7 Language Documentation
 
 **Sydrogen** is a statically typed systems programming language that compiles to native machine code.
 
@@ -35,7 +35,7 @@ new project directory.
 
 The compiler is **Furnace**.
 
-> **Status:** Alpha-6 \
+> **Status:** Alpha-7 \
 > **Compiler:** Furnace \
 > **Implementation:** Rust \
 > **Parser:** pest \
@@ -118,7 +118,7 @@ The compiler is **Furnace**.
 32. [Compilation](#32-compilation)
 33. [Complete Example](#33-complete-example)
 34. [Current Limitations](#34-current-limitations)
-35. [Alpha-6 Roadmap](#35-alpha-6-roadmap)
+35. [Alpha-7 Roadmap](#35-alpha-7-roadmap)
 
 ---
 
@@ -141,7 +141,7 @@ flowchart LR
 
 Furnace is written in Rust.
 
-Alpha-6 uses:
+Alpha-7 uses:
 
 * **Rust** for the compiler
 * **pest** for parsing
@@ -420,7 +420,7 @@ The assigned value must be compatible with the variable's type.
 
 # 7. Types
 
-Alpha-6 currently includes primitive types, arrays, tuples, lists, and a limited generic type.
+Alpha-7 currently includes primitive types, arrays, tuples, lists, and a limited generic type.
 
 ## 7.1 Primitive Types
 
@@ -841,7 +841,7 @@ The current implementation uses standard C input facilities internally.
 
 # 13. Operators
 
-Alpha-6 supports arithmetic, comparison, bitwise, unary, and loop increment operators.
+Alpha-7 supports arithmetic, comparison, bitwise, unary, and loop increment operators.
 
 ## 13.1 Arithmetic
 
@@ -917,7 +917,7 @@ For (Int I = 10; I > 0; I--)
 
 # 14. Unary Operators
 
-Alpha-6 supports unary negation and unary plus.
+Alpha-7 supports unary negation and unary plus.
 
 Example:
 
@@ -1919,9 +1919,9 @@ Furnace exposes its version through centralized compiler metadata.
 The current version is:
 
 ```rust
-pub const VERSION: &str = "Alpha-6";
+pub const VERSION: &str = "Alpha-7";
 ```
-> Fancy way of saying Alpha-6
+> Fancy way of saying Alpha-7
 
 Version information can be requested with:
 
@@ -1947,7 +1947,7 @@ Help can be requested with:
 Example version output:
 
 ```
-Furnace Alpha-6
+Furnace Alpha-7
 ```
 
 Usage:
@@ -1988,7 +1988,7 @@ The resulting executable can be started normally:
 
 # 33. Complete Example
 
-The following program demonstrates several features available in Alpha-6:
+The following program demonstrates several features available in Alpha-7:
 
 * `Nunction`
 * Variables
@@ -2100,13 +2100,13 @@ Open Nunction Main()
 
 # 34. Current Limitations
 
-Alpha-6 is an early development release.
+Alpha-7 is an early development release.
 
 The following features are not currently fully implemented in the backend:
 
 * `Data` declaration code generation
 * Object instantiation code generation
-* `Switch` / `Deal` / `Base` pattern matching
+* `Deal` remains reserved for future pattern matching; `Switch` / `Case` / `Base` control flow is implemented
 * Error handling in the Cranelift backend and Windows uncaught-error printing
 * Package and dependency management
 * Complete lexical scope handling
@@ -2131,23 +2131,17 @@ This distinction saves everyone from discovering that the compiler supports some
 
 ---
 
-# 35. Alpha-6 Roadmap
+# 35. Alpha-7 Roadmap
 
-Alpha-6 continues development of the Rust-based Furnace compiler.
+Alpha-7 continues development of the Rust-based Furnace compiler.
 
 ## Short Term
 
-### `Switch` / Pattern Matching
+### Switch Follow-up
 
-Planned constructs include:
-
-```
-Switch
-Deal
-Base
-```
-
-These are intended to provide pattern matching.
+`Switch`, `Case`, multi-value `or` patterns, and `Base` are implemented without
+fallthrough. Future pattern matching may assign a separate role to the
+reserved `Deal` keyword.
 
 ### Error Handling Follow-up
 
@@ -2189,7 +2183,7 @@ Future work includes clearer diagnostics for control-flow paths that do not retu
 
 ### Multicore Runtime
 
-Alpha-6 uses Rayon for compiler-side parallel analysis.
+Alpha-7 uses Rayon for compiler-side parallel analysis.
 
 Future versions are planned to provide mechanisms for Sydrogen programs to execute work on multiple CPU cores.
 
@@ -2238,9 +2232,9 @@ The compiler will need sufficient language features, standard library support, a
 
 ---
 
-# Alpha-6 Implementation Notes
+# Alpha-7 Implementation Notes
 
-Alpha-6 uses a different compiler implementation from the earlier experimental versions of Sydrogen.
+Alpha-7 uses a different compiler implementation from the earlier experimental versions of Sydrogen.
 
 Earlier versions used:
 
@@ -2273,7 +2267,7 @@ flowchart LR
 
 The change to Rust also makes the compiler itself part of the Sydrogen project's systems-level development work.
 
-Alpha-6 should not be treated as a finished language specification.
+Alpha-7 should not be treated as a finished language specification.
 
 Some syntax exists before its backend implementation.
 

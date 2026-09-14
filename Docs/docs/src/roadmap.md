@@ -1,20 +1,14 @@
-# Alpha-6 Roadmap
+# Alpha-7 Roadmap
 
-Alpha-6 continues development of the Rust-based Furnace compiler.
+Alpha-7 continues development of the Rust-based Furnace compiler.
 
 ## Short Term
 
-### `Switch` / Pattern Matching
+### Switch Follow-up
 
-Planned constructs include:
-
-```text
-Switch
-Deal
-Base
-```
-
-These are intended to provide pattern matching.
+`Switch`, `Case`, multi-value `or` patterns, and `Base` are implemented without
+fallthrough on both native executable formats and in Cranelift. Future pattern
+matching may assign a separate role to the reserved `Deal` keyword.
 
 ### Error Handling Follow-up
 
@@ -58,7 +52,7 @@ Future work includes clearer diagnostics for control-flow paths that do not retu
 
 ### Multicore Runtime
 
-Alpha-6 uses Rayon for compiler-side parallel analysis.
+Alpha-7 uses Rayon for compiler-side parallel analysis.
 
 Future versions are planned to provide mechanisms for Sydrogen programs to execute work on multiple CPU cores.
 

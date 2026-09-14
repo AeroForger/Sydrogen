@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AssignmentTarget, BinOp, DoNode, ErrorType, Expr, ForNode, FunctionDecl, IncrOp, Program,
-    RetKind, Statement, Subtype, TypeDecl, UnOp, WhileNode,
+    RetKind, Statement, Subtype, SwitchBranch, SwitchNode, TypeDecl, UnOp, WhileNode,
 };
 use crate::errors::{ForgeError, ForgeResult};
 use crate::ir::{
@@ -465,6 +465,7 @@ fn lower_statement(stmt: &Statement, lowerer: &mut Lowerer) -> ForgeResult<()> {
         Statement::ForEach(_) => {
             return Err(ForgeError::codegen("ForEach requires the typed backend"));
         }
+        Statement::Switch(node) => lower_switch_statement(node, lowerer)?,
         Statement::Do(node) => lower_do_statement(node, lowerer)?,
         Statement::Throw(error) => {
             if !error.error_type.is_builtin() {
@@ -541,6 +542,100 @@ fn lower_statement(stmt: &Statement, lowerer: &mut Lowerer) -> ForgeResult<()> {
             ));
         }
     }
+    Ok(())
+}
+
+fn lower_switch_statement(node: &SwitchNode, lowerer: &mut Lowerer) -> ForgeResult<()> {
+    let switch_value = lower_expr(&node.expression, lowerer)?;
+    let join_label = lowerer.alloc_label("switch_end");
+    let is_top_level_switch = lowerer.break_stack.is_empty();
+    if is_top_level_switch {
+        lowerer.break_stack.push(LoopCtx {
+            continue_label: String::new(),
+            exit_label: join_label.clone(),
+        });
+    }
+
+    let cases: Vec<_> = node
+        .branches
+        .iter()
+        .filter_map(|branch| match branch {
+            SwitchBranch::Case(case) => Some(case),
+            SwitchBranch::Base(_) => None,
+        })
+        .collect();
+    let base_body = node.branches.iter().find_map(|branch| match branch {
+        SwitchBranch::Base(body) => Some(body),
+        SwitchBranch::Case(_) => None,
+    });
+    let case_labels: Vec<_> = (0..cases.len())
+        .map(|index| lowerer.alloc_label(&format!("switch_case_{}", index)))
+        .collect();
+    let base_label = base_body.map(|_| lowerer.alloc_label("switch_base"));
+    let checks: Vec<_> = cases
+        .iter()
+        .enumerate()
+        .flat_map(|(case_index, case)| case.values.iter().map(move |value| (case_index, value)))
+        .collect();
+    let check_labels: Vec<_> = (0..checks.len())
+        .map(|index| {
+            if index == 0 {
+                lowerer.current_label.clone()
+            } else {
+                lowerer.alloc_label(&format!("switch_check_{}", index))
+            }
+        })
+        .collect();
+
+    if checks.is_empty() {
+        lowerer.finish_block(IrTerminator::Jump(
+            base_label.clone().unwrap_or_else(|| join_label.clone()),
+        ));
+    } else {
+        for (index, (case_index, case_value)) in checks.iter().enumerate() {
+            if index > 0 {
+                lowerer.start_block(check_labels[index].clone());
+            }
+            let pattern = lower_expr(case_value, lowerer)?;
+            let matches = lowerer.alloc_vreg();
+            lowerer.emit(IrInst::BinOp {
+                dest: matches,
+                op: IrBinOp::Eq,
+                lhs: switch_value.clone(),
+                rhs: pattern,
+            });
+            let no_match = if index + 1 < checks.len() {
+                check_labels[index + 1].clone()
+            } else {
+                base_label.clone().unwrap_or_else(|| join_label.clone())
+            };
+            lowerer.finish_block(IrTerminator::Branch {
+                cond: Operand::Reg(matches),
+                true_label: case_labels[*case_index].clone(),
+                false_label: no_match,
+            });
+        }
+    }
+
+    for (index, case) in cases.iter().enumerate() {
+        lowerer.start_block(case_labels[index].clone());
+        lower_statements(&case.body, lowerer)?;
+        if !lowerer.terminated {
+            lowerer.finish_block(IrTerminator::Jump(join_label.clone()));
+        }
+    }
+    if let (Some(label), Some(body)) = (base_label, base_body) {
+        lowerer.start_block(label);
+        lower_statements(body, lowerer)?;
+        if !lowerer.terminated {
+            lowerer.finish_block(IrTerminator::Jump(join_label.clone()));
+        }
+    }
+
+    if is_top_level_switch {
+        lowerer.break_stack.pop();
+    }
+    lowerer.start_block(join_label);
     Ok(())
 }
 

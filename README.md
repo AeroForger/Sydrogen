@@ -17,7 +17,7 @@
 
 Sydrogen is a statically typed, C-style systems programming language designed for native execution and explicit control.
 
-**Alpha-6** uses a compiler written in **Rust**. Furnace uses **pest** for parsing, a direct x86-64 code path for supported programs, and **Cranelift** for programs that need the typed path.
+**Alpha-7** uses a compiler written in **Rust**. Furnace uses **pest** for parsing, a direct x86-64 code path for supported programs, and **Cranelift** for programs that need the typed path.
 
 ### The Stack
 
@@ -29,7 +29,7 @@ Sydrogen is a statically typed, C-style systems programming language designed fo
 
 ---
 
-## Alpha-6 Features
+## Alpha-7 Features
 
 ## Native Code Generation
 
@@ -114,7 +114,7 @@ Open Nunction Main()
 }
 ```
 
-Alpha-6 currently supports:
+Alpha-7 currently supports:
 
 * **Types:** `Number`, `Int`, `Float`, `Weld`, `String`, `Bool` / `Boolean`
 * **Control flow:** `If`, `Else If`, `Else`, `While`, `For`
@@ -301,20 +301,32 @@ flowchart LR
 
 ## Current Limitations
 
-Alpha-6 is still under development.
+Alpha-7 is still under development.
 
-The following features are not yet fully implemented in the backend:
+The direct native backend currently supports x86-64 integer, Boolean, and
+`Weld` values. Linux programs that require floats, collections, `Data`, or
+objects use the Cranelift and system-linker path instead. Those typed features
+are not yet available for PE32+ output.
 
-* Full lexical scope and shadowing
-* `Data` code generation
-* Object instantiation code generation
-* `Switch` / `Deal` / `Base` pattern matching
-* Error handling in the Cranelift backend and Windows uncaught-error printing
-* Garbage collection
-* Multicore program execution
-* Self-hosting Furnace
+The Windows backend produces PE32+ executables and supports variables,
+arithmetic, comparisons, control flow, `Switch`, function calls, and caught
+typed errors. Its runtime does not yet implement `Print`, `Input`,
+`Program.Stop()`, or top-level uncaught-error messages.
 
-Some language constructs are already parsed and checked by Furnace but are not yet converted into executable native code.
+Other current limitations are:
+
+* Typed `Do` / `Catch` / `Finally` / `Throw` execution is implemented by the
+  direct native backend but not yet by Cranelift.
+* `Finally` runs for normal completion, `Return`, and propagated errors, but
+  not yet when `Stop` or `Skip` leaves a protected block.
+* Division by zero is raised automatically. Automatic `Error.Overflow` and
+  `Error.IO` conversion is still planned; both can currently be thrown
+  explicitly.
+* `Switch` supports exact `Int`, `Float`, and `Bool` cases without fallthrough.
+  The reserved `Deal` keyword does not yet have defined pattern-matching
+  semantics.
+* Full lexical scope and shadowing, garbage collection, package management,
+  multicore program execution, and self-hosting are not implemented.
 
 For the complete language reference and current implementation details, see **[The Sydrogen Programming Language Book](https://aeroforger.github.io/Sydrogen/)**.
 
@@ -324,22 +336,27 @@ For the complete language reference and current implementation details, see **[T
 
 ### Short Term
 
-* `Switch` / `Deal` / `Base` pattern matching
-* Cranelift support for `Do` / `Catch` / `Finally` / `Throw`
-* Improved scope handling
-* More standard library functionality
+* Add Cranelift execution for `Do`, `Catch`, `Finally`, and `Throw`.
+* Complete `Finally` unwinding for `Stop` and `Skip`, and add automatic
+  overflow and I/O error conversion.
+* Add a Windows runtime for console output, input, process termination, and
+  uncaught-error reporting.
+* Improve lexical scope and shadowing diagnostics.
+* Expand the systems-level standard library.
 
 ### Mid Term
 
-* Multicore program execution
-* Generic data types
-* More complete data and object support
+* Extend direct native code generation to floats, collections, `Data`, and
+  objects, including PE32+ support for those types.
+* Define whether `Deal` extends `Switch` with richer pattern matching.
+* Expand generic data types and generic function support.
+* Add language-level multicore program execution.
 
 ### Long Term
 
-* **Scrap:** Optional garbage collector
-* **Ironwork:** Sydrogen package manager
-* **Self-hosting:** Rewrite Furnace in Sydrogen for the 2.0 generation
+* **Scrap:** Optional garbage collector.
+* **Ironwork:** Sydrogen package manager.
+* **Self-hosting:** Rewrite Furnace in Sydrogen for the 2.0 generation.
 
 ---
 

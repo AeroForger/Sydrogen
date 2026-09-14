@@ -25,7 +25,7 @@ Example output:
 
 ```text
 Downloading source...
-Latest tag: alpha-6
+Latest tag: alpha-7
 Installing Furnace...
 Furnace updated successfully.
 ```

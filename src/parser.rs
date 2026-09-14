@@ -56,6 +56,7 @@ fn build_statement(pair: Pair<Rule>) -> ForgeResult<Statement> {
         Rule::while_stmt => Statement::While(build_while_stmt(inner)?),
         Rule::for_stmt => Statement::For(build_for_stmt(inner)?),
         Rule::foreach_stmt => Statement::ForEach(build_foreach_stmt(inner)?),
+        Rule::switch_stmt => Statement::Switch(build_switch_stmt(inner)?),
         Rule::do_stmt => Statement::Do(build_do_stmt(inner)?),
         Rule::throw_stmt => Statement::Throw(build_throw_stmt(inner)?),
         Rule::data_decl => Statement::DataDecl(build_data_decl(inner)?),
@@ -63,6 +64,55 @@ fn build_statement(pair: Pair<Rule>) -> ForgeResult<Statement> {
         Rule::use_stmt => Statement::Use(build_use_stmt(inner)?),
         Rule::using_stmt => Statement::Using(build_using_stmt(inner)?),
         r => return Err(ForgeError::parse(format!("unexpected rule: {:?}", r))),
+    })
+}
+
+fn build_switch_stmt(pair: Pair<Rule>) -> ForgeResult<SwitchNode> {
+    let mut expression = None;
+    let mut branches = Vec::new();
+    for part in pair.into_inner() {
+        match part.as_rule() {
+            Rule::expr if expression.is_none() => expression = Some(build_expr(part)?),
+            Rule::switch_case => {
+                let mut values = Vec::new();
+                let mut body = None;
+                for case_part in part.into_inner() {
+                    match case_part.as_rule() {
+                        Rule::case_values => {
+                            values = case_part
+                                .into_inner()
+                                .filter(|value| value.as_rule() == Rule::expr)
+                                .map(build_expr)
+                                .collect::<ForgeResult<Vec<_>>>()?;
+                        }
+                        Rule::block => body = Some(build_block(case_part)?),
+                        Rule::statement => body = Some(vec![build_statement(case_part)?]),
+                        _ => {}
+                    }
+                }
+                branches.push(SwitchBranch::Case(SwitchCaseNode {
+                    values,
+                    body: body.ok_or_else(|| ForgeError::parse("Case requires a body"))?,
+                }));
+            }
+            Rule::switch_base => {
+                let body_part = part
+                    .into_inner()
+                    .find(|child| matches!(child.as_rule(), Rule::block | Rule::statement))
+                    .ok_or_else(|| ForgeError::parse("Base requires a body"))?;
+                let body = if body_part.as_rule() == Rule::block {
+                    build_block(body_part)?
+                } else {
+                    vec![build_statement(body_part)?]
+                };
+                branches.push(SwitchBranch::Base(body));
+            }
+            _ => {}
+        }
+    }
+    Ok(SwitchNode {
+        expression: expression.ok_or_else(|| ForgeError::parse("Switch requires an expression"))?,
+        branches,
     })
 }
 

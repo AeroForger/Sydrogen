@@ -1,6 +1,6 @@
 # Unary Operators
 
-Alpha-6 supports unary negation and unary plus.
+Alpha-7 supports unary negation and unary plus.
 
 Example:
 
