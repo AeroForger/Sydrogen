@@ -30,6 +30,7 @@ impl BackendKind {
 pub enum Command {
     Build {
         input: PathBuf,
+        platform: Platform,
         backend: BackendKind,
     },
     Compile {
@@ -39,6 +40,7 @@ pub enum Command {
     },
     Run {
         input: PathBuf,
+        platform: Platform,
         backend: BackendKind,
     },
     New {
@@ -58,9 +60,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, ExitCode> {
         eprintln!("error: no command specified");
         eprintln!();
         eprintln!("Usage:");
-        eprintln!("    Furnace build <project>.blower [--backend cranelift|native]");
-        eprintln!("    Furnace compile <file>.anvil <platform> [--backend cranelift|native]");
-        eprintln!("    Furnace run <file>.anvil|<project>.blower [--backend cranelift|native]");
+        print_compile_usage();
         eprintln!("    Furnace backend <native|cranelift>");
         eprintln!("    Furnace new <APP_TYPE> -n <NAME>");
         eprintln!("    Furnace update");
@@ -80,38 +80,29 @@ pub fn parse_args(args: &[String]) -> Result<Command, ExitCode> {
         "build" | "Build" => {
             if args.len() < 2 {
                 eprintln!("error: 'build' requires a .blower project file");
-                eprintln!("usage: Furnace build <project>.blower [--backend cranelift|native]");
+                eprintln!("usage: Furnace build <project>.blower [--windows] [--backend cranelift|native]");
                 return Err(ExitCode::from(2));
             }
             let input_path = PathBuf::from(&args[1]);
             validate_blower_extension(&input_path)?;
-            let backend = resolve_backend(parse_build_backend_flag(&args[2..])?)?;
+            let (platform, backend) = parse_compilation_options(&args[2..], false, "build")?;
             Ok(Command::Build {
                 input: input_path,
+                platform,
                 backend,
             })
         }
         "compile" | "Compile" => {
-            if args.len() < 3 {
-                eprintln!("error: 'compile' requires an input .anvil file and a target platform");
-                eprintln!(
-                    "usage: Furnace compile <file>.anvil <platform> [--backend cranelift|native]"
-                );
+            if args.len() < 2 {
+                eprintln!("error: 'compile' requires an input .anvil file");
+                eprintln!("usage: Furnace compile <file>.anvil [linux|windows] [--windows] [--backend cranelift|native]");
                 return Err(ExitCode::from(2));
             }
 
             let input_path = PathBuf::from(&args[1]);
             validate_anvil_extension(&input_path)?;
 
-            let platform = match Platform::parse(&args[2]) {
-                Ok(p) => p,
-                Err(err_msg) => {
-                    eprintln!("error: {}", err_msg);
-                    return Err(ExitCode::from(2));
-                }
-            };
-
-            let backend = resolve_backend(parse_backend_flag(&args[3..])?)?;
+            let (platform, backend) = parse_compilation_options(&args[2..], true, "compile")?;
 
             Ok(Command::Compile {
                 input: input_path,
@@ -123,7 +114,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, ExitCode> {
             if args.len() < 2 {
                 eprintln!("error: 'run' requires an input .anvil file");
                 eprintln!(
-                    "usage: Furnace run <file>.anvil|<project>.blower [--backend cranelift|native]"
+                    "usage: Furnace run <file>.anvil|<project>.blower [--windows] [--backend cranelift|native]"
                 );
                 return Err(ExitCode::from(2));
             }
@@ -131,10 +122,11 @@ pub fn parse_args(args: &[String]) -> Result<Command, ExitCode> {
             let input_path = PathBuf::from(&args[1]);
             validate_run_extension(&input_path)?;
 
-            let backend = resolve_backend(parse_backend_flag(&args[2..])?)?;
+            let (platform, backend) = parse_compilation_options(&args[2..], false, "run")?;
 
             Ok(Command::Run {
                 input: input_path,
+                platform,
                 backend,
             })
         }
@@ -174,9 +166,7 @@ pub fn parse_args(args: &[String]) -> Result<Command, ExitCode> {
             eprintln!("error: unknown command '{}'", unknown);
             eprintln!();
             eprintln!("Usage:");
-            eprintln!("    Furnace build <project>.blower [--backend cranelift|native]");
-            eprintln!("    Furnace compile <file>.anvil <platform> [--backend cranelift|native]");
-            eprintln!("    Furnace run <file>.anvil|<project>.blower [--backend cranelift|native]");
+            print_compile_usage();
             eprintln!("    Furnace backend <native|cranelift>");
             eprintln!("    Furnace new <APP_TYPE> -n <NAME>");
             eprintln!("Available backends: native, cranelift");
@@ -197,37 +187,82 @@ fn validate_blower_extension(path: &PathBuf) -> Result<(), ExitCode> {
     }
 }
 
-fn parse_build_backend_flag(remaining_args: &[String]) -> Result<Option<BackendKind>, ExitCode> {
-    if remaining_args.is_empty() {
-        return parse_backend_flag(remaining_args);
-    }
-    if remaining_args.len() != 2 || (remaining_args[0] != "--backend" && remaining_args[0] != "-b")
-    {
-        eprintln!(
-            "error: unsupported furnace build argument '{}'; expected --backend native|cranelift",
-            remaining_args[0]
-        );
-        return Err(ExitCode::from(2));
-    }
-    parse_backend_flag(remaining_args)
-}
-
-fn parse_backend_flag(remaining_args: &[String]) -> Result<Option<BackendKind>, ExitCode> {
+fn parse_compilation_options(
+    remaining_args: &[String],
+    allow_platform: bool,
+    command: &str,
+) -> Result<(Platform, BackendKind), ExitCode> {
     let mut backend = None;
+    let mut positional_platform = None;
+    let mut windows_flag = false;
     let mut i = 0;
     while i < remaining_args.len() {
         if remaining_args[i] == "--backend" || remaining_args[i] == "-b" {
             if i + 1 >= remaining_args.len() {
-                eprintln!("error: missing argument for --backend");
+                if command == "build" {
+                    eprintln!(
+                        "error: unsupported furnace build argument '{}'; expected --backend native|cranelift or --windows",
+                        remaining_args[i]
+                    );
+                } else {
+                    eprintln!("error: missing argument for --backend");
+                }
                 return Err(ExitCode::from(2));
             }
             backend = Some(parse_backend_kind(&remaining_args[i + 1])?);
             i += 2;
-        } else {
+        } else if remaining_args[i] == "--windows" {
+            windows_flag = true;
             i += 1;
+        } else if allow_platform
+            && !remaining_args[i].starts_with('-')
+            && positional_platform.is_none()
+        {
+            positional_platform = Some(Platform::parse(&remaining_args[i]).map_err(|message| {
+                eprintln!("error: {}", message);
+                ExitCode::from(2)
+            })?);
+            i += 1;
+        } else {
+            eprintln!(
+                "error: unsupported furnace {} argument '{}'",
+                command, remaining_args[i]
+            );
+            return Err(ExitCode::from(2));
         }
     }
-    Ok(backend)
+
+    if windows_flag && positional_platform == Some(Platform::Linux) {
+        eprintln!(
+            "error: conflicting targets: positional 'linux' cannot be combined with --windows"
+        );
+        return Err(ExitCode::from(2));
+    }
+    let platform = if windows_flag {
+        Platform::Windows
+    } else {
+        positional_platform.unwrap_or(Platform::Linux)
+    };
+    let backend = if platform == Platform::Windows && backend.is_none() {
+        BackendKind::Native
+    } else {
+        resolve_backend(backend)?
+    };
+    if platform == Platform::Windows && backend != BackendKind::Native {
+        eprintln!("error: Windows targeting requires the native backend; Cranelift Windows linking is not supported");
+        return Err(ExitCode::from(2));
+    }
+    Ok((platform, backend))
+}
+
+fn print_compile_usage() {
+    eprintln!("    Furnace build <project>.blower [--windows] [--backend cranelift|native]");
+    eprintln!(
+        "    Furnace compile <file>.anvil [linux|windows] [--windows] [--backend cranelift|native]"
+    );
+    eprintln!(
+        "    Furnace run <file>.anvil|<project>.blower [--windows] [--backend cranelift|native]"
+    );
 }
 
 fn resolve_backend(explicit: Option<BackendKind>) -> Result<BackendKind, ExitCode> {

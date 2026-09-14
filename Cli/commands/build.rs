@@ -4,7 +4,7 @@ use std::process::{Command, ExitCode};
 use crate::args::BackendKind;
 use crate::platform::Platform;
 
-pub fn execute(input: &Path, backend: BackendKind) -> ExitCode {
+pub fn execute(input: &Path, platform: Platform, backend: BackendKind) -> ExitCode {
     println!("Building project {}...", input.display());
     let project = match furnace::project::Project::load(input) {
         Ok(project) => project,
@@ -25,7 +25,7 @@ pub fn execute(input: &Path, backend: BackendKind) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let output = project.output_path();
+    let output = platform.output_path(project.output_path());
     let build_dir = output.parent().expect("project output always has a parent");
     if let Err(error) = std::fs::create_dir_all(build_dir) {
         eprintln!(
@@ -37,8 +37,8 @@ pub fn execute(input: &Path, backend: BackendKind) -> ExitCode {
     }
 
     let result = match backend {
-        BackendKind::Native => build_native(&program, &output),
-        BackendKind::Cranelift => build_cranelift(&program, &output, build_dir),
+        BackendKind::Native => build_native(&program, &output, platform),
+        BackendKind::Cranelift => build_cranelift(&program, &output, build_dir, platform),
     };
     if let Err(error) = result {
         eprintln!("{}", error);
@@ -51,8 +51,13 @@ pub fn execute(input: &Path, backend: BackendKind) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn build_native(program: &furnace::ast::Program, output: &Path) -> Result<(), String> {
-    let bytes = furnace::backend::compile_to_elf(program).map_err(|error| error.to_string())?;
+fn build_native(
+    program: &furnace::ast::Program,
+    output: &Path,
+    platform: Platform,
+) -> Result<(), String> {
+    let bytes = furnace::backend::compile_native(program, platform.native_target())
+        .map_err(|error| error.to_string())?;
     std::fs::write(output, bytes).map_err(|error| {
         format!(
             "error: cannot write executable '{}': {}",
@@ -60,7 +65,9 @@ fn build_native(program: &furnace::ast::Program, output: &Path) -> Result<(), St
             error
         )
     })?;
-    make_executable(output);
+    if platform == Platform::Linux {
+        make_executable(output);
+    }
     Ok(())
 }
 
@@ -68,6 +75,7 @@ fn build_cranelift(
     program: &furnace::ast::Program,
     output: &Path,
     build_dir: &Path,
+    platform: Platform,
 ) -> Result<(), String> {
     let temporary = tempfile::Builder::new()
         .prefix(".furnace-")
@@ -80,7 +88,6 @@ fn build_cranelift(
         .map_err(|error| format!("error: cannot write runtime support: {}", error))?;
 
     println!("Linking...");
-    let platform = Platform::Linux;
     let mut linker = Command::new(platform.linker_name());
     linker.arg(&object).arg(&runtime).arg("-o").arg(output);
     for flag in platform.default_linker_flags() {

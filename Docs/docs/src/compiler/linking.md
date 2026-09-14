@@ -1,6 +1,6 @@
 # Linking
 
-The Cranelift path generates a native object file. The direct native path creates an ELF64 executable and does not use this step.
+The Cranelift path generates a native object file. The direct native path creates an ELF64 or PE32+ executable and does not use this step. PE32+ cross-compilation therefore does not require a Windows linker or SDK.
 
 The object file is linked using the system C compiler.
 

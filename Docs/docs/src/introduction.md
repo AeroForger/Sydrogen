@@ -6,16 +6,16 @@ Sydrogen source files use the `.anvil` extension. If you drop one on the floor, 
 
 The compiler is **Furnace**.
 
-> **Status:** Alpha-6
-> **Compiler:** Furnace
-> **Implementation:** Rust
-> **Parser:** pest
-> **Code generation:** Direct x86-64 path or Cranelift
-> **Output:** ELF64 executable or native object code
+> **Status:** Sydrogen Alpha-6 \
+> **Compiler:** Furnace \
+> **Implementation:** Rust \
+> **Parser:** pest \
+> **Code generation:** Direct x86-64 path or Cranelift \
+> **Output:** ELF64/PE32+ executable or native object code
 
 ## What Sydrogen Is
 
-Sydrogen is a statically typed programming language whose compiled programs do not require a virtual machine or interpreter at runtime. Furnace either writes an ELF64 executable directly or uses the system linker for the Cranelift path.
+Sydrogen is a statically typed programming language whose compiled programs do not require a virtual machine or interpreter at runtime. Furnace either writes an ELF64 Linux or PE32+ Windows executable directly, or uses the system linker for the Cranelift path.
 
 ## What Furnace Is
 
@@ -44,7 +44,7 @@ Furnace is divided into several stages:
 
 * **pest** parses the source into an AST.
 * **Semantic analysis** validates the AST and rejects invalid programs.
-* The direct native path writes x86-64 instructions and an ELF64 executable.
+* The direct native path writes x86-64 instructions and an ELF64 or PE32+ executable.
 * **Cranelift** generates a native object file for programs that need the typed path.
 * **cc** (the system C compiler) links that object file into an executable.
 

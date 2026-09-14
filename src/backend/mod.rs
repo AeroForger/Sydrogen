@@ -1,4 +1,5 @@
 pub mod elf;
+pub mod pe;
 pub mod x86_64;
 
 use crate::ast::Program;
@@ -9,14 +10,172 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static FALLBACK_ID: AtomicU64 = AtomicU64::new(0);
 
-pub fn compile_to_elf(program: &Program) -> ForgeResult<Vec<u8>> {
-    if requires_typed_backend(program) {
-        return compile_typed_elf(program);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    Linux,
+    Windows,
+}
+
+impl Target {
+    pub fn executable_extension(self) -> Option<&'static str> {
+        match self {
+            Self::Linux => None,
+            Self::Windows => Some("exe"),
+        }
+    }
+
+    fn user_code_vaddr(self) -> u64 {
+        match self {
+            Self::Linux => 0x400000 + 128 + elf::STARTUP_STUB_SIZE as u64,
+            Self::Windows => pe::IMAGE_BASE + pe::SECTION_RVA as u64 + pe::STARTUP_STUB_SIZE as u64,
+        }
+    }
+}
+
+pub fn compile_native(program: &Program, target: Target) -> ForgeResult<Vec<u8>> {
+    let needs_typed_backend = requires_typed_backend(program);
+    if needs_typed_backend && program_uses_error_handling(program) {
+        return Err(ForgeError::codegen(
+            "native typed error handling cannot be combined with floats, collections, Data, objects, or typed input yet",
+        ));
+    }
+    if needs_typed_backend {
+        return match target {
+            Target::Linux => compile_typed_elf(program),
+            Target::Windows => Err(ForgeError::codegen(
+                "Windows native compilation does not yet support floats, collections, Data, objects, or typed input",
+            )),
+        };
+    }
+    if target == Target::Windows {
+        validate_windows_program(program)?;
     }
     let ir = crate::lowering::lower(program)?;
-    let backend = x86_64::NativeX86Backend::new();
+    let backend = x86_64::NativeX86Backend::new(target.user_code_vaddr());
     let (user_code, func_offsets) = backend.compile_program(&ir)?;
-    elf::generate_elf64_executable(&user_code, &func_offsets)
+    match target {
+        Target::Linux => elf::generate_elf64_executable(&user_code, &func_offsets),
+        Target::Windows => pe::generate_pe32_plus_executable(&user_code, &func_offsets),
+    }
+}
+
+pub fn program_uses_error_handling(program: &Program) -> bool {
+    fn statements_use_errors(statements: &[Statement]) -> bool {
+        statements.iter().any(|statement| match statement {
+            Statement::Do(_) | Statement::Throw(_) => true,
+            Statement::FunctionDecl(function) => statements_use_errors(&function.body),
+            Statement::If(node) => {
+                node.branches
+                    .iter()
+                    .any(|(_, body)| statements_use_errors(body))
+                    || node
+                        .else_body
+                        .as_ref()
+                        .is_some_and(|body| statements_use_errors(body))
+            }
+            Statement::While(node) => statements_use_errors(&node.body),
+            Statement::For(node) => statements_use_errors(&node.body),
+            Statement::ForEach(node) => statements_use_errors(&node.body),
+            _ => false,
+        })
+    }
+    statements_use_errors(&program.statements)
+}
+
+pub fn compile_to_elf(program: &Program) -> ForgeResult<Vec<u8>> {
+    compile_native(program, Target::Linux)
+}
+
+pub fn compile_to_pe(program: &Program) -> ForgeResult<Vec<u8>> {
+    compile_native(program, Target::Windows)
+}
+
+fn validate_windows_program(program: &Program) -> ForgeResult<()> {
+    if program.statements.iter().any(windows_unsupported_statement) {
+        return Err(ForgeError::codegen(
+            "Windows native compilation does not yet support Print, Input, or Program.Stop() because those operations currently use the Linux syscall runtime",
+        ));
+    }
+    Ok(())
+}
+
+fn windows_unsupported_statement(statement: &Statement) -> bool {
+    match statement {
+        Statement::Print(_) | Statement::Input(_) | Statement::Stop => true,
+        Statement::VarDecl(decl) => decl
+            .initializer
+            .as_ref()
+            .is_some_and(windows_unsupported_expr),
+        Statement::FunctionDecl(function) => {
+            function.body.iter().any(windows_unsupported_statement)
+        }
+        Statement::If(node) => {
+            node.branches.iter().any(|(condition, body)| {
+                windows_unsupported_expr(condition)
+                    || body.iter().any(windows_unsupported_statement)
+            }) || node
+                .else_body
+                .as_ref()
+                .is_some_and(|body| body.iter().any(windows_unsupported_statement))
+        }
+        Statement::While(node) => {
+            windows_unsupported_expr(&node.condition)
+                || node.body.iter().any(windows_unsupported_statement)
+        }
+        Statement::For(node) => {
+            node.init
+                .initializer
+                .as_ref()
+                .is_some_and(windows_unsupported_expr)
+                || windows_unsupported_expr(&node.condition)
+                || node.body.iter().any(windows_unsupported_statement)
+        }
+        Statement::ForEach(node) => node.body.iter().any(windows_unsupported_statement),
+        Statement::Do(node) => {
+            node.body.iter().any(windows_unsupported_statement)
+                || node
+                    .catches
+                    .iter()
+                    .any(|catch| catch.body.iter().any(windows_unsupported_statement))
+                || node
+                    .finally_body
+                    .as_ref()
+                    .is_some_and(|body| body.iter().any(windows_unsupported_statement))
+        }
+        Statement::Throw(error) => windows_unsupported_expr(&error.message),
+        Statement::Return(value) => value.as_ref().is_some_and(windows_unsupported_expr),
+        Statement::Assignment(assignment) => windows_unsupported_expr(&assignment.value),
+        Statement::ExprStmt(expr) => windows_unsupported_expr(expr),
+        Statement::DataDecl(_)
+        | Statement::ObjectDecl(_)
+        | Statement::Skip
+        | Statement::Use(_)
+        | Statement::Using(_) => false,
+    }
+}
+
+fn windows_unsupported_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Input(_) => true,
+        Expr::MemberAccess { object, .. } => windows_unsupported_expr(object),
+        Expr::IndexAccess { object, index } => {
+            windows_unsupported_expr(object) || windows_unsupported_expr(index)
+        }
+        Expr::BinaryOp { lhs, rhs, .. } => {
+            windows_unsupported_expr(lhs) || windows_unsupported_expr(rhs)
+        }
+        Expr::UnaryOp { operand, .. } => windows_unsupported_expr(operand),
+        Expr::Call { args, .. } | Expr::NamespaceCall { args, .. } => {
+            args.iter().any(windows_unsupported_expr)
+        }
+        Expr::MethodCall { object, args, .. } => {
+            windows_unsupported_expr(object) || args.iter().any(windows_unsupported_expr)
+        }
+        Expr::ArrayLiteral(values) | Expr::TupleLiteral(values) | Expr::ListLiteral(values) => {
+            values.iter().any(windows_unsupported_expr)
+        }
+        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Identifier(_) => false,
+    }
 }
 
 fn compile_typed_elf(program: &Program) -> ForgeResult<Vec<u8>> {
@@ -132,6 +291,18 @@ fn statement_requires_typed_backend(statement: &Statement) -> bool {
         // Collection storage and element types are implemented by the typed
         // backend. The native CLI transparently routes this statement there.
         Statement::ForEach(_) => true,
+        Statement::Do(node) => {
+            node.body.iter().any(statement_requires_typed_backend)
+                || node
+                    .catches
+                    .iter()
+                    .any(|catch| catch.body.iter().any(statement_requires_typed_backend))
+                || node
+                    .finally_body
+                    .as_ref()
+                    .is_some_and(|body| body.iter().any(statement_requires_typed_backend))
+        }
+        Statement::Throw(error) => expr_requires_typed_backend(&error.message),
         Statement::Return(value) => value.as_ref().is_some_and(expr_requires_typed_backend),
         Statement::Assignment(assignment) => expr_requires_typed_backend(&assignment.value),
         Statement::ExprStmt(expr) => expr_requires_typed_backend(expr),

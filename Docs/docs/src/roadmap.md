@@ -16,17 +16,12 @@ Base
 
 These are intended to provide pattern matching.
 
-### Error Handling
+### Error Handling Follow-up
 
-Planned constructs include:
-
-```text
-Do
-Fail
-Final
-```
-
-These are intended to provide structured error handling.
+`Do`, `Catch`, `Finally`, and `Throw` are implemented by the direct native
+backend. Follow-up work includes Cranelift support, Windows uncaught-error
+printing, automatic overflow and I/O conversion, and `Finally` handling for
+`Stop` and `Skip`.
 
 ### Generic Data Types
 

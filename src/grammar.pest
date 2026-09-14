@@ -19,6 +19,8 @@ statement  = {
     | object_decl
     | print_stmt
     | foreach_stmt
+    | do_stmt
+    | throw_stmt
     | for_stmt
     | if_stmt
     | while_stmt
@@ -89,6 +91,12 @@ incr_op         = { "++" | "--" }
 return_stmt     = { kw_return ~ expr? ~ ";" }
 stop_stmt       = { kw_stop ~ ";" }
 skip_stmt       = { kw_skip ~ ";" }
+do_stmt         = { kw_do ~ block ~ catch_clause* ~ finally_clause? }
+catch_clause    = { kw_catch ~ error_type ~ "=>" ~ ident ~ block }
+finally_clause  = { kw_finally ~ block }
+throw_stmt      = { kw_throw ~ error_construct ~ ";" }
+error_construct = { error_type ~ "(" ~ expr ~ ")" }
+error_type      = { kw_error ~ ("." ~ member_ident)? }
 
 // --- Assignment & bare expr ---
 assignment      = { assignment_target ~ "=" ~ expr ~ ";" }
@@ -154,6 +162,14 @@ kw_switch     = ${ "Switch" ~ !ident_char }
 kw_deal       = ${ "Deal" ~ !ident_char }
 kw_base       = ${ "Base" ~ !ident_char }
 kw_do         = ${ "Do" ~ !ident_char }
+kw_catch      = ${ "Catch" ~ !ident_char }
+kw_finally    = ${ "Finally" ~ !ident_char }
+kw_throw      = ${ "Throw" ~ !ident_char }
+kw_error      = ${ "Error" ~ !ident_char }
+kw_invalid_value = ${ "InvalidValue" ~ !ident_char }
+kw_division_by_zero = ${ "DivisionByZero" ~ !ident_char }
+kw_overflow   = ${ "Overflow" ~ !ident_char }
+kw_io         = ${ "IO" ~ !ident_char }
 kw_fail       = ${ "Fail" ~ !ident_char }
 kw_final      = ${ "Final" ~ !ident_char }
 kw_and        = ${ "And" ~ !ident_char }
@@ -182,7 +198,9 @@ keyword            = _{
     kw_open | kw_closed | kw_showcase | kw_number | kw_weld | kw_string | kw_ore
     | kw_materials | kw_data | kw_int | kw_float | kw_generic | kw_function
     | kw_nunction | kw_return | kw_if | kw_while | kw_else | kw_switch | kw_deal
-    | kw_base | kw_do | kw_fail | kw_final | kw_and | kw_or | kw_xor
+    | kw_base | kw_do | kw_catch | kw_finally | kw_throw | kw_error
+    | kw_invalid_value | kw_division_by_zero | kw_overflow | kw_io
+    | kw_fail | kw_final | kw_and | kw_or | kw_xor
     | kw_use | kw_using | kw_new | kw_print | kw_input | kw_stop | kw_skip | kw_empty
     | kw_for | kw_foreach | kw_in | kw_bool | kw_boolean | kw_true | kw_false
 }

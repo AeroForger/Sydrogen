@@ -7,7 +7,9 @@ The following features are not currently fully implemented in the backend:
 - `Data` declaration code generation
 - Object instantiation code generation
 - `Switch` / `Deal` / `Base` pattern matching
-- `Do` / `Fail` / `Final` error handling
+- Error handling in the Cranelift backend
+- Windows top-level uncaught-error printing
+- `Finally` handling for `Stop` and `Skip`
 - Package and dependency management
 - Complete lexical scope handling
 - Multicore Sydrogen program execution

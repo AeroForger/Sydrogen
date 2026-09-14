@@ -99,6 +99,8 @@ pub enum Statement {
     While(WhileNode),
     For(ForNode),
     ForEach(ForEachNode),
+    Do(DoNode),
+    Throw(ErrorValue),
     Return(Option<Expr>),
     Stop,
     Skip,
@@ -106,6 +108,64 @@ pub enum Statement {
     Use(UseNode),
     Using(UsingNode),
     ExprStmt(Expr),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ErrorType {
+    Error,
+    InvalidValue,
+    DivisionByZero,
+    Overflow,
+    IO,
+    Unknown(String),
+}
+
+impl ErrorType {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Error => "Error",
+            Self::InvalidValue => "Error.InvalidValue",
+            Self::DivisionByZero => "Error.DivisionByZero",
+            Self::Overflow => "Error.Overflow",
+            Self::IO => "Error.IO",
+            Self::Unknown(name) => name,
+        }
+    }
+
+    pub fn code(&self) -> i64 {
+        match self {
+            Self::Error => 1,
+            Self::InvalidValue => 2,
+            Self::DivisionByZero => 3,
+            Self::Overflow => 4,
+            Self::IO => 5,
+            Self::Unknown(_) => 0,
+        }
+    }
+
+    pub fn is_builtin(&self) -> bool {
+        !matches!(self, Self::Unknown(_))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ErrorValue {
+    pub error_type: ErrorType,
+    pub message: Expr,
+}
+
+#[derive(Debug, Clone)]
+pub struct CatchNode {
+    pub error_type: ErrorType,
+    pub binding: String,
+    pub body: Vec<Statement>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DoNode {
+    pub body: Vec<Statement>,
+    pub catches: Vec<CatchNode>,
+    pub finally_body: Option<Vec<Statement>>,
 }
 
 /// Increment/decrement direction for For loop headers.

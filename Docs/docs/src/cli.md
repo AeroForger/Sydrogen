@@ -43,9 +43,9 @@ On failure the command exits with a non-zero code and prints an error message.
 
 ```text
 Usage:
-    furnace build <project>.blower [--backend native|cranelift]
-    furnace compile <file>.anvil <platform> [--backend native|cranelift]
-    furnace run <file>.anvil|<project>.blower [--backend native|cranelift]
+    furnace build <project>.blower [--windows] [--backend native|cranelift]
+    furnace compile <file>.anvil [linux|windows] [--windows] [--backend native|cranelift]
+    furnace run <file>.anvil|<project>.blower [--windows] [--backend native|cranelift]
     furnace backend <native|cranelift>
     furnace new <APP_TYPE> -n <NAME>
     furnace update
@@ -61,7 +61,33 @@ to the project's `build/` directory. Use `--backend native` or
 `--backend cranelift` to select a backend.
 
 `build` accepts only `.blower` targets. Compile an independent `.anvil` file
-with `furnace compile file.anvil linux`.
+with `furnace compile file.anvil` (or the equivalent explicit Linux target,
+`furnace compile file.anvil linux`).
+
+## Windows Target
+
+Linux x86-64 and ELF64 are the default native target and executable format.
+Use either form below to cross-compile a Windows x86-64 PE32+ executable:
+
+```fish
+furnace compile main.anvil --windows
+furnace compile main.anvil windows
+```
+
+Both commands select the direct native backend and write `main.exe`. The same
+`--windows` target option is accepted by `build`, which adds `.exe` to the
+project output name. Cross-compilation works when Furnace is running on Linux
+and does not require a Windows linker or SDK.
+
+The Windows backend currently supports integer and Boolean computation, `Weld`
+value passing, variables, control flow, and Sydrogen function calls. It does not yet support
+`Print`, `Input`, `Program.Stop()`, floats, collections, `Data`, or objects.
+Those features produce an explicit compiler error because their native runtime
+or typed fallback is currently Linux-only. Cranelift Windows linking is also
+unsupported; selecting `--backend cranelift` with a Windows target is an error.
+
+`run --windows` is recognized, but Furnace cannot execute the cross-compiled
+file on a non-Windows host; use `compile` or `build` for cross-compilation.
 
 ## Persistent Backend Selection
 

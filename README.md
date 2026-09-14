@@ -33,7 +33,7 @@ Sydrogen is a statically typed, C-style systems programming language designed fo
 
 ## Native Code Generation
 
-Furnace has a direct native code path for a supported subset of Sydrogen. It writes x86-64 instructions and creates an ELF64 executable without first creating an object file or calling an external linker.
+Furnace has a direct native code path for a supported subset of Sydrogen. It writes x86-64 instructions and creates an ELF64 Linux or PE32+ Windows executable without first creating an object file or calling an external linker.
 
 The compiler chooses the path after parsing and semantic analysis:
 
@@ -45,7 +45,7 @@ flowchart TD
     D --> E(Direct native path)
     E --> F(Internal IR)
     F --> G(x86-64 bytes)
-    G --> H(ELF64 executable)
+    G --> H(ELF64 or PE32+ executable)
     D --> I(Cranelift path)
     I --> J(Object file)
     J --> K(cc)
@@ -64,7 +64,7 @@ Programs that use floats, arrays, tuples, lists, or other typed features use the
 
 `src/backend/x86_64/encoder.rs` writes instruction bytes for moves, integer operations, comparisons, calls, returns, jumps, and the function stack frame. It records calls and jumps whose destinations are not known yet. After all functions are written, Furnace fills in those relative addresses and embeds string data.
 
-`src/backend/elf.rs` writes an ELF64 header, a loadable program header, a startup entry point, the generated functions, helper routines, and string data. The startup code calls `Main` and exits with its return value.
+`src/backend/elf.rs` writes the Linux ELF64 layout, while `src/backend/pe.rs` writes the Windows PE32+ layout. Each format supplies its own aligned headers and startup entry point around the shared generated x86-64 functions.
 
 ### Typed Code Path
 
@@ -208,9 +208,10 @@ The current CLI uses:
 
 ```fish
 ./target/release/furnace compile main.anvil linux
+./target/release/furnace compile main.anvil --windows
 ```
 
-Furnace parses the source and performs semantic analysis, then selects the direct native path or the Cranelift path. The direct path writes an ELF64 executable. The Cranelift path generates an object file and links it using the system C toolchain.
+Furnace parses the source and performs semantic analysis, then selects the direct native path or the Cranelift path. Linux/ELF64 is the default. `--windows` selects direct native Windows x86-64 output and writes a PE32+ `.exe`, including when Furnace runs on Linux. The Cranelift path generates an object file and links it using the system C toolchain.
 
 ### Running a Program
 
@@ -229,7 +230,7 @@ Save the default backend with:
 
 Available backends:
 
-* `native` writes a direct x86-64 ELF64 executable.
+* `native` writes a direct x86-64 ELF64 or PE32+ executable.
 * `cranelift` writes a native object file and links it with `cc`.
 
 The selection persists across Furnace invocations and is used by `build`,
@@ -243,6 +244,7 @@ for one command:
 ./target/release/furnace build project.blower --backend native
 ./target/release/furnace compile main.anvil linux --backend native
 ./target/release/furnace run main.anvil --backend cranelift
+./target/release/furnace compile main.anvil --windows
 ```
 
 ### Creating a Project
@@ -281,7 +283,7 @@ The compiler is divided into several stages:
    Selects the direct x86-64 path for supported programs or the Cranelift path for programs that need typed features.
 
 5. **Output**
-   The direct path writes an ELF64 executable. The Cranelift path writes an object file and uses the system C compiler to produce an executable.
+   The direct path writes an ELF64 or PE32+ executable. The Cranelift path writes an object file and uses the system C compiler to produce an executable.
 
 The overall pipeline runs in this order:
 
@@ -307,7 +309,7 @@ The following features are not yet fully implemented in the backend:
 * `Data` code generation
 * Object instantiation code generation
 * `Switch` / `Deal` / `Base` pattern matching
-* `Do` / `Fail` / `Final` error handling
+* Error handling in the Cranelift backend and Windows uncaught-error printing
 * Garbage collection
 * Multicore program execution
 * Self-hosting Furnace
@@ -323,13 +325,12 @@ For the complete language reference and current implementation details, see **[T
 ### Short Term
 
 * `Switch` / `Deal` / `Base` pattern matching
-* `Do` / `Fail` / `Final` error handling
+* Cranelift support for `Do` / `Catch` / `Finally` / `Throw`
 * Improved scope handling
 * More standard library functionality
 
 ### Mid Term
 
-* `Open` / `Closed` / `Showcase` visibility rules
 * Multicore program execution
 * Generic data types
 * More complete data and object support

@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
-    AssignmentTarget, BinOp, Expr, ForNode, FunctionDecl, IncrOp, Program, RetKind, Statement,
-    Subtype, TypeDecl, UnOp, WhileNode,
+    AssignmentTarget, BinOp, DoNode, ErrorType, Expr, ForNode, FunctionDecl, IncrOp, Program,
+    RetKind, Statement, Subtype, TypeDecl, UnOp, WhileNode,
 };
 use crate::errors::{ForgeError, ForgeResult};
 use crate::ir::{
@@ -29,10 +29,19 @@ struct Lowerer {
     var_types: HashMap<String, TypeDecl>,
     var_storage: HashMap<String, String>,
     storage_counter: usize,
+    error_targets: Vec<String>,
+    function_error_label: String,
+    finally_return_targets: Vec<String>,
+    current_ret_kind: RetKind,
 }
 
 impl Lowerer {
-    fn new(known_functions: HashSet<String>, function_ret_kinds: HashMap<String, RetKind>) -> Self {
+    fn new(
+        known_functions: HashSet<String>,
+        function_ret_kinds: HashMap<String, RetKind>,
+        function_error_label: String,
+        current_ret_kind: RetKind,
+    ) -> Self {
         Self {
             vreg_counter: 0,
             block_counter: 0,
@@ -46,6 +55,10 @@ impl Lowerer {
             var_types: HashMap::new(),
             var_storage: HashMap::new(),
             storage_counter: 0,
+            error_targets: Vec::new(),
+            function_error_label,
+            finally_return_targets: Vec::new(),
+            current_ret_kind,
         }
     }
 
@@ -91,6 +104,25 @@ impl Lowerer {
             .get(name)
             .cloned()
             .unwrap_or_else(|| name.to_string())
+    }
+
+    fn error_target(&self) -> String {
+        self.error_targets
+            .last()
+            .cloned()
+            .unwrap_or_else(|| self.function_error_label.clone())
+    }
+
+    fn branch_on_error(&mut self) {
+        let status = self.alloc_vreg();
+        self.emit(IrInst::GetErrorCode { dest: status });
+        let continuation = self.alloc_label("error_ok");
+        self.finish_block(IrTerminator::Branch {
+            cond: Operand::Reg(status),
+            true_label: self.error_target(),
+            false_label: continuation.clone(),
+        });
+        self.start_block(continuation);
     }
 }
 
@@ -165,7 +197,13 @@ fn lower_function(
         }
     }
 
-    let mut lowerer = Lowerer::new(known_funcs.clone(), function_ret_kinds.clone());
+    let error_label = format!("fn_{}_propagate_error", f.name);
+    let mut lowerer = Lowerer::new(
+        known_funcs.clone(),
+        function_ret_kinds.clone(),
+        error_label.clone(),
+        f.ret_kind.clone(),
+    );
     let entry_label = lowerer.alloc_label(&format!("fn_{}_entry", f.name));
     lowerer.start_block(entry_label);
 
@@ -197,6 +235,9 @@ fn lower_function(
         };
         lowerer.finish_block(default_ret);
     }
+
+    lowerer.start_block(error_label);
+    lowerer.finish_block(IrTerminator::PropagateError);
 
     Ok(IrFunction {
         name: f.name.clone(),
@@ -272,7 +313,15 @@ fn lower_statement(stmt: &Statement, lowerer: &mut Lowerer) -> ForgeResult<()> {
             } else {
                 None
             };
-            lowerer.finish_block(IrTerminator::Ret(ret_op));
+            if let Some(target) = lowerer.finally_return_targets.last().cloned() {
+                lowerer.emit(IrInst::StoreVar {
+                    var_name: "__sydrogen_return_value".to_string(),
+                    src: ret_op.unwrap_or(Operand::Const(0)),
+                });
+                lowerer.finish_block(IrTerminator::Jump(target));
+            } else {
+                lowerer.finish_block(IrTerminator::Ret(ret_op));
+            }
         }
         Statement::Print(print_node) => {
             if let Expr::Str(parts) = &print_node.expr {
@@ -416,6 +465,23 @@ fn lower_statement(stmt: &Statement, lowerer: &mut Lowerer) -> ForgeResult<()> {
         Statement::ForEach(_) => {
             return Err(ForgeError::codegen("ForEach requires the typed backend"));
         }
+        Statement::Do(node) => lower_do_statement(node, lowerer)?,
+        Statement::Throw(error) => {
+            if !error.error_type.is_builtin() {
+                return Err(ForgeError::codegen(format!(
+                    "invalid error type '{}'",
+                    error.error_type.name()
+                )));
+            }
+            let message = lower_expr(&error.message, lowerer)?;
+            let type_name = error_type_operand(&error.error_type, lowerer);
+            lowerer.emit(IrInst::SetError {
+                code: Operand::Const(error.error_type.code()),
+                message,
+                type_name,
+            });
+            lowerer.finish_block(IrTerminator::Jump(lowerer.error_target()));
+        }
         Statement::Stop => {
             let break_ctx = lowerer.break_stack.last().cloned().ok_or_else(|| {
                 ForgeError::codegen("Stop can only be used inside a loop or If statement")
@@ -506,6 +572,257 @@ fn lower_while_stmt(node: &WhileNode, lowerer: &mut Lowerer) -> ForgeResult<()> 
 
     lowerer.break_stack.pop();
     lowerer.start_block(exit_label);
+    Ok(())
+}
+
+fn lower_do_statement(node: &DoNode, lowerer: &mut Lowerer) -> ForgeResult<()> {
+    if node.catches.is_empty() && node.finally_body.is_none() {
+        return Err(ForgeError::codegen(
+            "Do block must be followed by at least one Catch or Finally",
+        ));
+    }
+    if let Some(catch) = node
+        .catches
+        .iter()
+        .find(|catch| !catch.error_type.is_builtin())
+    {
+        return Err(ForgeError::codegen(format!(
+            "invalid error type '{}'",
+            catch.error_type.name()
+        )));
+    }
+    let dispatch_label = lowerer.alloc_label("error_dispatch");
+    let completion_label = lowerer.alloc_label("do_complete");
+    let finally_label = node
+        .finally_body
+        .as_ref()
+        .map(|_| lowerer.alloc_label("finally"));
+    let finally_success_label = node
+        .finally_body
+        .as_ref()
+        .map(|_| lowerer.alloc_label("finally_success"));
+    let finally_error_label = node
+        .finally_body
+        .as_ref()
+        .map(|_| lowerer.alloc_label("finally_error"));
+    let finally_return_label = node
+        .finally_body
+        .as_ref()
+        .map(|_| lowerer.alloc_label("finally_return"));
+    let control_storage = format!("__sydrogen_finally_control#{}", lowerer.storage_counter);
+    lowerer.storage_counter += 1;
+    let outer_error_target = lowerer.error_target();
+    let outer_return_target = lowerer.finally_return_targets.last().cloned();
+    let propagation_target = finally_error_label
+        .clone()
+        .unwrap_or_else(|| outer_error_target.clone());
+
+    if let Some(return_label) = &finally_return_label {
+        lowerer.finally_return_targets.push(return_label.clone());
+    }
+
+    lowerer.error_targets.push(dispatch_label.clone());
+    lower_statements(&node.body, lowerer)?;
+    lowerer.error_targets.pop();
+    if !lowerer.terminated {
+        lowerer.finish_block(IrTerminator::Jump(
+            finally_success_label
+                .clone()
+                .unwrap_or_else(|| completion_label.clone()),
+        ));
+    }
+
+    lowerer.start_block(dispatch_label);
+    let error_code = lowerer.alloc_vreg();
+    let error_message = lowerer.alloc_vreg();
+    lowerer.emit(IrInst::GetErrorCode { dest: error_code });
+    lowerer.emit(IrInst::GetErrorMessage {
+        dest: error_message,
+    });
+
+    let handler_labels: Vec<String> = (0..node.catches.len())
+        .map(|index| lowerer.alloc_label(&format!("catch_{}", index)))
+        .collect();
+    let specific_count = node
+        .catches
+        .iter()
+        .take_while(|catch| catch.error_type != ErrorType::Error)
+        .count();
+    let mut next_test = lowerer.current_label.clone();
+    for index in 0..specific_count {
+        if index > 0 {
+            lowerer.start_block(next_test.clone());
+        }
+        let is_match = lowerer.alloc_vreg();
+        lowerer.emit(IrInst::BinOp {
+            dest: is_match,
+            op: IrBinOp::Eq,
+            lhs: Operand::Reg(error_code),
+            rhs: Operand::Const(node.catches[index].error_type.code()),
+        });
+        next_test = lowerer.alloc_label("catch_next");
+        let false_label = if index + 1 < specific_count {
+            next_test.clone()
+        } else if node.catches.len() > specific_count {
+            handler_labels[specific_count].clone()
+        } else {
+            propagation_target.clone()
+        };
+        lowerer.finish_block(IrTerminator::Branch {
+            cond: Operand::Reg(is_match),
+            true_label: handler_labels[index].clone(),
+            false_label,
+        });
+    }
+    if specific_count == 0 {
+        let target = handler_labels
+            .first()
+            .cloned()
+            .unwrap_or_else(|| propagation_target.clone());
+        lowerer.finish_block(IrTerminator::Jump(target));
+    }
+
+    for (index, catch) in node.catches.iter().enumerate() {
+        lowerer.start_block(handler_labels[index].clone());
+        let old_type = lowerer
+            .var_types
+            .insert(catch.binding.clone(), TypeDecl::Weld);
+        let old_storage = lowerer.var_storage.get(&catch.binding).cloned();
+        let storage = format!("{}#catch{}", catch.binding, lowerer.storage_counter);
+        lowerer.storage_counter += 1;
+        lowerer
+            .var_storage
+            .insert(catch.binding.clone(), storage.clone());
+        lowerer.emit(IrInst::StoreVar {
+            var_name: storage,
+            src: Operand::Reg(error_message),
+        });
+        lowerer.emit(IrInst::ClearError);
+        lowerer.error_targets.push(propagation_target.clone());
+        lower_statements(&catch.body, lowerer)?;
+        lowerer.error_targets.pop();
+        if !lowerer.terminated {
+            lowerer.finish_block(IrTerminator::Jump(
+                finally_success_label
+                    .clone()
+                    .unwrap_or_else(|| completion_label.clone()),
+            ));
+        }
+        match old_type {
+            Some(value) => {
+                lowerer.var_types.insert(catch.binding.clone(), value);
+            }
+            None => {
+                lowerer.var_types.remove(&catch.binding);
+            }
+        }
+        match old_storage {
+            Some(value) => {
+                lowerer.var_storage.insert(catch.binding.clone(), value);
+            }
+            None => {
+                lowerer.var_storage.remove(&catch.binding);
+            }
+        }
+    }
+
+    if finally_return_label.is_some() {
+        lowerer.finally_return_targets.pop();
+    }
+
+    if let Some(success_label) = &finally_success_label {
+        lowerer.start_block(success_label.clone());
+        lowerer.emit(IrInst::StoreVar {
+            var_name: control_storage.clone(),
+            src: Operand::Const(0),
+        });
+        lowerer.emit(IrInst::ClearError);
+        lowerer.finish_block(IrTerminator::Jump(finally_label.clone().unwrap()));
+    }
+
+    if let Some(error_label) = &finally_error_label {
+        lowerer.start_block(error_label.clone());
+        lowerer.emit(IrInst::StoreVar {
+            var_name: control_storage.clone(),
+            src: Operand::Const(0),
+        });
+        lowerer.finish_block(IrTerminator::Jump(finally_label.clone().unwrap()));
+    }
+
+    if let Some(return_label) = &finally_return_label {
+        lowerer.start_block(return_label.clone());
+        lowerer.emit(IrInst::StoreVar {
+            var_name: control_storage.clone(),
+            src: Operand::Const(1),
+        });
+        lowerer.emit(IrInst::ClearError);
+        lowerer.finish_block(IrTerminator::Jump(finally_label.clone().unwrap()));
+    }
+
+    if let (Some(finally_label), Some(finally_body)) = (&finally_label, &node.finally_body) {
+        lowerer.start_block(finally_label.clone());
+        let pending_code = lowerer.alloc_vreg();
+        let pending_message = lowerer.alloc_vreg();
+        let pending_type_name = lowerer.alloc_vreg();
+        lowerer.emit(IrInst::GetErrorCode { dest: pending_code });
+        lowerer.emit(IrInst::GetErrorMessage {
+            dest: pending_message,
+        });
+        lowerer.emit(IrInst::GetErrorTypeName {
+            dest: pending_type_name,
+        });
+        lowerer.emit(IrInst::ClearError);
+        lowerer.error_targets.push(outer_error_target.clone());
+        lower_statements(finally_body, lowerer)?;
+        lowerer.error_targets.pop();
+        if !lowerer.terminated {
+            let restore_label = lowerer.alloc_label("finally_rethrow");
+            let control_label = lowerer.alloc_label("finally_control");
+            lowerer.finish_block(IrTerminator::Branch {
+                cond: Operand::Reg(pending_code),
+                true_label: restore_label.clone(),
+                false_label: control_label.clone(),
+            });
+            lowerer.start_block(restore_label);
+            lowerer.emit(IrInst::SetError {
+                code: Operand::Reg(pending_code),
+                message: Operand::Reg(pending_message),
+                type_name: Operand::Reg(pending_type_name),
+            });
+            lowerer.finish_block(IrTerminator::Jump(outer_error_target));
+
+            lowerer.start_block(control_label);
+            let control = lowerer.alloc_vreg();
+            lowerer.emit(IrInst::LoadVar {
+                dest: control,
+                var_name: control_storage,
+            });
+            let return_continuation = lowerer.alloc_label("finally_return_continue");
+            lowerer.finish_block(IrTerminator::Branch {
+                cond: Operand::Reg(control),
+                true_label: return_continuation.clone(),
+                false_label: completion_label.clone(),
+            });
+            lowerer.start_block(return_continuation);
+            if let Some(outer_target) = outer_return_target {
+                lowerer.finish_block(IrTerminator::Jump(outer_target));
+            } else {
+                let value = lowerer.alloc_vreg();
+                lowerer.emit(IrInst::LoadVar {
+                    dest: value,
+                    var_name: "__sydrogen_return_value".to_string(),
+                });
+                let result = if lowerer.current_ret_kind.is_void() {
+                    None
+                } else {
+                    Some(Operand::Reg(value))
+                };
+                lowerer.finish_block(IrTerminator::Ret(result));
+            }
+        }
+    }
+
+    lowerer.start_block(completion_label);
     Ok(())
 }
 
@@ -678,6 +995,30 @@ fn lower_expr(expr: &Expr, lowerer: &mut Lowerer) -> ForgeResult<Operand> {
                 BinOp::Le => IrBinOp::Le,
                 BinOp::Ge => IrBinOp::Ge,
             };
+            if matches!(ir_op, IrBinOp::Div | IrBinOp::Rem) {
+                let division_label = lowerer.alloc_label("division_ok");
+                let error_label = lowerer.alloc_label("division_by_zero");
+                lowerer.finish_block(IrTerminator::Branch {
+                    cond: rhs_op.clone(),
+                    true_label: division_label.clone(),
+                    false_label: error_label.clone(),
+                });
+                lowerer.start_block(error_label);
+                let message = lower_expr(
+                    &Expr::Str(vec![crate::ast::StringPart::Literal(
+                        "division by zero".to_string(),
+                    )]),
+                    lowerer,
+                )?;
+                let type_name = error_type_operand(&ErrorType::DivisionByZero, lowerer);
+                lowerer.emit(IrInst::SetError {
+                    code: Operand::Const(ErrorType::DivisionByZero.code()),
+                    message,
+                    type_name,
+                });
+                lowerer.finish_block(IrTerminator::Jump(lowerer.error_target()));
+                lowerer.start_block(division_label);
+            }
             let dest = lowerer.alloc_vreg();
             lowerer.emit(IrInst::BinOp {
                 dest,
@@ -727,6 +1068,7 @@ fn lower_expr(expr: &Expr, lowerer: &mut Lowerer) -> ForgeResult<Operand> {
                 func: callee.clone(),
                 args: arg_ops,
             });
+            lowerer.branch_on_error();
             Ok(Operand::Reg(dest))
         }
         _ => Err(ForgeError::codegen(format!(
@@ -734,6 +1076,15 @@ fn lower_expr(expr: &Expr, lowerer: &mut Lowerer) -> ForgeResult<Operand> {
             expr
         ))),
     }
+}
+
+fn error_type_operand(error_type: &ErrorType, lowerer: &mut Lowerer) -> Operand {
+    let dest = lowerer.alloc_vreg();
+    lowerer.emit(IrInst::ConstStr {
+        dest,
+        value: format!("{}\0", error_type.name()),
+    });
+    Operand::Reg(dest)
 }
 
 fn is_bool_expr(expr: &Expr, lowerer: &Lowerer) -> bool {

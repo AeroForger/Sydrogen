@@ -37,6 +37,7 @@
 - [Function Calls](language/function-calls.md)
 - [Recursion](language/recursion.md)
 - [Scope](language/scope.md)
+- [Error Handling](language/error-handling.md)
 - [Comments](language/comments.md)
 - [Visibility](language/visibility.md)
 - [Data Declarations](language/data.md)

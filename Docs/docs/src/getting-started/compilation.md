@@ -30,6 +30,7 @@ For example:
 ```fish
 furnace build Project.blower
 furnace compile main.anvil linux
+furnace compile main.anvil --windows
 furnace run main.anvil
 furnace backend native
 furnace backend cranelift
@@ -58,10 +59,11 @@ file. The executable is named by `Project.Name` and written to `build/`.
 
 For one standalone source, use:
 
-The current CLI command is:
+Linux/ELF64 is the default, so either of these commands produces `main`:
 
 ```fish
 ./target/debug/furnace compile main.anvil linux
+./target/debug/furnace compile main.anvil
 ```
 
 The compile process:
@@ -73,7 +75,7 @@ The compile process:
 5. Performs semantic analysis.
 6. Selects the direct native path or the Cranelift path.
 7. Generates functions and calls.
-8. Writes an ELF64 executable directly, or creates an object file and invokes the platform linker.
+8. Writes an ELF64 or PE32+ executable directly, or creates an object file and invokes the Linux platform linker.
 9. Produces the executable.
 
 Example output:
@@ -87,13 +89,28 @@ Output: ./main
 
 The CLI uses the `Platform` enum in `Cli/platform.rs`.
 
-The currently supported target is:
+The supported direct-native targets are:
 
 ```text
-linux
+linux (default): x86-64 ELF64
+windows: x86-64 PE32+
 ```
 
-Additional targets can be added as compiler support is implemented.
+To cross-compile from Linux to Windows without an external linker or Windows
+SDK, run:
+
+```fish
+furnace compile main.anvil --windows
+```
+
+The result is `main.exe`. `furnace compile main.anvil windows` is equivalent,
+and `furnace build Project.blower --windows` writes
+`build/<Project.Name>.exe`.
+
+Windows output currently excludes `Print`, `Input`, `Program.Stop()`, floats,
+collections, `Data`, and objects. Furnace reports these as unsupported instead
+of falling back to an ELF executable. Windows also requires `--backend native`;
+the flag selects it automatically when no backend is explicitly supplied.
 
 ## Run a Sydrogen Program
 
@@ -122,7 +139,7 @@ Use the `backend` command to persist the default backend:
 
 Available backends:
 
-- `native` writes a direct x86-64 ELF64 executable.
+- `native` writes a direct x86-64 ELF64 or PE32+ executable.
 - `cranelift` writes a native object file and links it with `cc`.
 
 The selection is reused by `build`, `compile`, and `run` in later Furnace
@@ -138,6 +155,7 @@ for only that command:
 ./target/debug/furnace build Project.blower --backend native
 ./target/debug/furnace compile main.anvil linux --backend native
 ./target/debug/furnace run main.anvil --backend cranelift
+./target/debug/furnace compile main.anvil --windows
 ```
 
 ## Version and Help
@@ -172,15 +190,15 @@ Usage:
 
 ```text
 Usage:
-    Furnace compile <file>.anvil <platform> [--backend native|cranelift]
-    Furnace run <file>.anvil [--backend native|cranelift]
+    Furnace compile <file>.anvil [linux|windows] [--windows] [--backend native|cranelift]
+    Furnace run <file>.anvil [--windows] [--backend native|cranelift]
     Furnace backend <native|cranelift>
     Furnace new <APP_TYPE> -n <NAME>
     Furnace -version
     Furnace -help
 
 Available backends:
-    native: direct x86-64 ELF64 executable
+    native: direct x86-64 ELF64 or PE32+ executable
     cranelift: native object file linked with cc
 ```
 

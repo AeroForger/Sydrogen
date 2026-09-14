@@ -23,13 +23,18 @@ This page summarizes the keywords and reserved terms that appear in the current 
 | `Else` | Conditional fallback |
 | `While` | While loop |
 | `For` | For loop |
+| `Do` | Introduces a protected error-handling block |
+| `Catch` | Handles the first matching typed error |
+| `Finally` | Runs cleanup after a protected block |
+| `Throw` | Constructs and propagates a typed error |
+| `Error` | Root of the built-in error hierarchy |
 | `Stop` | Structured early exit |
 | `Program` | Runtime namespace |
 | `Use` | Module import path |
 | `Using` | Imported symbol from a module |
 | `Data` | Structured data declaration |
 
-A number of these keywords are present in the parser or AST, but not yet fully implemented in the backend. See [Current Limitations](../limitations.md) and the language chapters for the current status.
+A number of these keywords are present in the parser or AST, but not yet fully implemented in every backend. See [Error Handling](../language/error-handling.md), [Current Limitations](../limitations.md), and the language chapters for the current status.
 
 ---
 

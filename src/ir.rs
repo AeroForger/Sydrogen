@@ -94,6 +94,21 @@ pub enum IrInst {
     SysExit {
         status: Operand,
     },
+    SetError {
+        code: Operand,
+        message: Operand,
+        type_name: Operand,
+    },
+    ClearError,
+    GetErrorCode {
+        dest: VReg,
+    },
+    GetErrorMessage {
+        dest: VReg,
+    },
+    GetErrorTypeName {
+        dest: VReg,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -105,6 +120,7 @@ pub enum IrTerminator {
         true_label: String,
         false_label: String,
     },
+    PropagateError,
 }
 
 #[derive(Debug, Clone, PartialEq)]

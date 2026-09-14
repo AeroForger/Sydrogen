@@ -13,13 +13,21 @@ fn main() -> ExitCode {
     };
 
     match command {
-        args::Command::Build { input, backend } => commands::build::execute(&input, backend),
+        args::Command::Build {
+            input,
+            platform,
+            backend,
+        } => commands::build::execute(&input, platform, backend),
         args::Command::Compile {
             input,
             platform,
             backend,
         } => commands::compile::execute(&input, platform, backend),
-        args::Command::Run { input, backend } => commands::run::execute(&input, backend),
+        args::Command::Run {
+            input,
+            platform,
+            backend,
+        } => commands::run::execute(&input, platform, backend),
         args::Command::New { app_type, name } => commands::new::execute(&app_type, &name),
         args::Command::Backend { backend } => commands::backend::execute(backend),
         args::Command::Version => commands::version::execute(),

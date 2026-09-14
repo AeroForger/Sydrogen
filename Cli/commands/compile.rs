@@ -35,19 +35,21 @@ pub fn execute(input: &Path, platform: Platform, backend: BackendKind) -> ExitCo
     } else {
         PathBuf::from(format!("./{}", stem))
     };
+    let output_exe = platform.output_path(output_exe);
 
     match backend {
         BackendKind::Native => {
             println!("Linking...");
-            let elf_bytes = match furnace::backend::compile_to_elf(&program) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    eprintln!("{}", e);
-                    return ExitCode::from(1);
-                }
-            };
+            let executable_bytes =
+                match furnace::backend::compile_native(&program, platform.native_target()) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        return ExitCode::from(1);
+                    }
+                };
 
-            if let Err(e) = std::fs::write(&output_exe, elf_bytes) {
+            if let Err(e) = std::fs::write(&output_exe, executable_bytes) {
                 eprintln!(
                     "error: cannot write executable '{}': {}",
                     output_exe.display(),
@@ -57,7 +59,7 @@ pub fn execute(input: &Path, platform: Platform, backend: BackendKind) -> ExitCo
             }
 
             #[cfg(unix)]
-            {
+            if platform == Platform::Linux {
                 use std::os::unix::fs::PermissionsExt;
                 if let Ok(metadata) = std::fs::metadata(&output_exe) {
                     let mut perms = metadata.permissions();

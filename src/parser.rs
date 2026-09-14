@@ -56,12 +56,80 @@ fn build_statement(pair: Pair<Rule>) -> ForgeResult<Statement> {
         Rule::while_stmt => Statement::While(build_while_stmt(inner)?),
         Rule::for_stmt => Statement::For(build_for_stmt(inner)?),
         Rule::foreach_stmt => Statement::ForEach(build_foreach_stmt(inner)?),
+        Rule::do_stmt => Statement::Do(build_do_stmt(inner)?),
+        Rule::throw_stmt => Statement::Throw(build_throw_stmt(inner)?),
         Rule::data_decl => Statement::DataDecl(build_data_decl(inner)?),
         Rule::object_decl => Statement::ObjectDecl(build_object_decl(inner)?),
         Rule::use_stmt => Statement::Use(build_use_stmt(inner)?),
         Rule::using_stmt => Statement::Using(build_using_stmt(inner)?),
         r => return Err(ForgeError::parse(format!("unexpected rule: {:?}", r))),
     })
+}
+
+fn build_do_stmt(pair: Pair<Rule>) -> ForgeResult<DoNode> {
+    let mut body = None;
+    let mut catches = Vec::new();
+    let mut finally_body = None;
+    for part in pair.into_inner() {
+        match part.as_rule() {
+            Rule::block if body.is_none() => body = Some(build_block(part)?),
+            Rule::catch_clause => {
+                let mut inner = part
+                    .into_inner()
+                    .filter(|child| child.as_rule() != Rule::kw_catch);
+                let error_type = parse_error_type(inner.next().unwrap())?;
+                let binding = inner.next().unwrap().as_str().to_string();
+                let body = build_block(inner.next().unwrap())?;
+                catches.push(CatchNode {
+                    error_type,
+                    binding,
+                    body,
+                });
+            }
+            Rule::finally_clause => {
+                let block = part
+                    .into_inner()
+                    .find(|child| child.as_rule() == Rule::block)
+                    .ok_or_else(|| ForgeError::parse("Finally requires a block"))?;
+                finally_body = Some(build_block(block)?);
+            }
+            _ => {}
+        }
+    }
+    Ok(DoNode {
+        body: body.ok_or_else(|| ForgeError::parse("Do requires a block"))?,
+        catches,
+        finally_body,
+    })
+}
+
+fn build_throw_stmt(pair: Pair<Rule>) -> ForgeResult<ErrorValue> {
+    let construct = pair
+        .into_inner()
+        .find(|part| part.as_rule() == Rule::error_construct)
+        .ok_or_else(|| ForgeError::parse("Throw requires an error value"))?;
+    let mut inner = construct.into_inner();
+    let error_type = parse_error_type(inner.next().unwrap())?;
+    let message = build_expr(
+        inner
+            .next()
+            .ok_or_else(|| ForgeError::parse("Thrown errors require a message"))?,
+    )?;
+    Ok(ErrorValue {
+        error_type,
+        message,
+    })
+}
+
+fn parse_error_type(pair: Pair<Rule>) -> ForgeResult<ErrorType> {
+    match pair.as_str().trim() {
+        "Error" => Ok(ErrorType::Error),
+        "Error.InvalidValue" => Ok(ErrorType::InvalidValue),
+        "Error.DivisionByZero" => Ok(ErrorType::DivisionByZero),
+        "Error.Overflow" => Ok(ErrorType::Overflow),
+        "Error.IO" => Ok(ErrorType::IO),
+        value => Ok(ErrorType::Unknown(value.to_string())),
+    }
 }
 
 fn nyi(name: &str) -> ForgeError {

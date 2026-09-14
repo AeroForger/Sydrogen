@@ -18,6 +18,7 @@ struct ValidationContext<'a> {
 struct Scope {
     var_types: HashMap<String, TypeDecl>,
     object_types: HashMap<String, String>,
+    catch_bindings: std::collections::HashSet<String>,
 }
 
 impl Scope {
@@ -25,6 +26,7 @@ impl Scope {
         Self {
             var_types: HashMap::new(),
             object_types: HashMap::new(),
+            catch_bindings: std::collections::HashSet::new(),
         }
     }
 
@@ -36,6 +38,7 @@ impl Scope {
         Self {
             var_types,
             object_types: HashMap::new(),
+            catch_bindings: std::collections::HashSet::new(),
         }
     }
 
@@ -77,6 +80,16 @@ fn collect_var_types(statements: &[Statement], scope: &mut Scope) {
             }
             Statement::ForEach(node) => {
                 collect_var_types(&node.body, scope);
+            }
+            Statement::Do(node) => {
+                collect_var_types(&node.body, scope);
+                for catch in &node.catches {
+                    scope.catch_bindings.insert(catch.binding.clone());
+                    collect_var_types(&catch.body, scope);
+                }
+                if let Some(body) = &node.finally_body {
+                    collect_var_types(body, scope);
+                }
             }
             Statement::FunctionDecl(func) => {
                 collect_var_types(&func.body, scope);
@@ -597,6 +610,60 @@ fn validate_statement(
         }
         Statement::ForEach(node) => {
             validate_foreach_stmt(node, scope, program, context)?;
+        }
+        Statement::Do(node) => {
+            if node.catches.is_empty() && node.finally_body.is_none() {
+                return Err(ForgeError::parse(
+                    "Do block must be followed by at least one Catch or Finally",
+                ));
+            }
+            validate_statements(&node.body, scope, program, context)?;
+            let mut caught = std::collections::HashSet::new();
+            let mut generic_seen = false;
+            for catch in &node.catches {
+                if !catch.error_type.is_builtin() {
+                    return Err(ForgeError::parse(format!(
+                        "invalid error type '{}'",
+                        catch.error_type.name()
+                    )));
+                }
+                if generic_seen {
+                    return Err(ForgeError::parse(format!(
+                        "Catch {} is unreachable because Catch Error appears first",
+                        catch.error_type.name()
+                    )));
+                }
+                if !caught.insert(catch.error_type.clone()) {
+                    return Err(ForgeError::parse(format!(
+                        "duplicate Catch for {}",
+                        catch.error_type.name()
+                    )));
+                }
+                generic_seen = catch.error_type == crate::ast::ErrorType::Error;
+                let mut catch_scope = scope.clone();
+                catch_scope
+                    .var_types
+                    .insert(catch.binding.clone(), TypeDecl::Weld);
+                validate_statements(&catch.body, &catch_scope, program, context)?;
+            }
+            if let Some(body) = &node.finally_body {
+                validate_statements(body, scope, program, context)?;
+            }
+        }
+        Statement::Throw(error) => {
+            if !error.error_type.is_builtin() {
+                return Err(ForgeError::parse(format!(
+                    "invalid error type '{}'",
+                    error.error_type.name()
+                )));
+            }
+            validate_expr(&error.message, scope, program, context)?;
+            if expr_type(&error.message, scope, program) != ExprType::Weld {
+                return Err(ForgeError::parse(format!(
+                    "Throw {} requires a Weld message",
+                    error.error_type.name()
+                )));
+            }
         }
         Statement::Stop => {
             if context.current_function == Some("Main") {
@@ -1216,6 +1283,11 @@ fn validate_expr(
                 "shared member access is not allowed: {}",
                 name
             )));
+        }
+        Expr::Identifier(name)
+            if scope.catch_bindings.contains(name) && !scope.contains_key(name) =>
+        {
+            return Err(ForgeError::parse(format!("Undefined variable: {}", name)));
         }
         _ => {}
     }

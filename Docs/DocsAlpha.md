@@ -2107,7 +2107,7 @@ The following features are not currently fully implemented in the backend:
 * `Data` declaration code generation
 * Object instantiation code generation
 * `Switch` / `Deal` / `Base` pattern matching
-* `Do` / `Fail` / `Final` error handling
+* Error handling in the Cranelift backend and Windows uncaught-error printing
 * Package and dependency management
 * Complete lexical scope handling
 * Multicore Sydrogen program execution
@@ -2149,17 +2149,10 @@ Base
 
 These are intended to provide pattern matching.
 
-### Error Handling
+### Error Handling Follow-up
 
-Planned constructs include:
-
-```
-Do
-Fail
-Final
-```
-
-These are intended to provide structured error handling.
+`Do`, `Catch`, `Finally`, and `Throw` are implemented by the direct native
+backend. Cranelift support and Windows uncaught-error printing remain planned.
 
 ### Generic Data Types
 

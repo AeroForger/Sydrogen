@@ -4,7 +4,11 @@ use std::process::{Command, ExitCode};
 use crate::args::BackendKind;
 use crate::platform::Platform;
 
-pub fn execute(input: &Path, backend: BackendKind) -> ExitCode {
+pub fn execute(input: &Path, platform: Platform, backend: BackendKind) -> ExitCode {
+    if platform != host_platform() {
+        eprintln!("error: furnace run cannot execute a {} target on this host; use furnace compile or furnace build for cross-compilation", platform);
+        return ExitCode::from(1);
+    }
     let program = match load_program(input) {
         Ok(program) => program,
         Err(error) => {
@@ -31,15 +35,16 @@ pub fn execute(input: &Path, backend: BackendKind) -> ExitCode {
 
     match backend {
         BackendKind::Native => {
-            let elf_bytes = match furnace::backend::compile_to_elf(&program) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    eprintln!("{}", e);
-                    return ExitCode::from(1);
-                }
-            };
+            let executable_bytes =
+                match furnace::backend::compile_native(&program, platform.native_target()) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        return ExitCode::from(1);
+                    }
+                };
 
-            if let Err(e) = std::fs::write(&exe_path, elf_bytes) {
+            if let Err(e) = std::fs::write(&exe_path, executable_bytes) {
                 eprintln!("error: cannot write temporary executable: {}", e);
                 return ExitCode::from(1);
             }
@@ -76,7 +81,6 @@ pub fn execute(input: &Path, backend: BackendKind) -> ExitCode {
                 return ExitCode::from(1);
             }
 
-            let platform = Platform::Linux;
             let mut linker = Command::new(platform.linker_name());
             linker
                 .arg(&obj_path)
@@ -131,6 +135,17 @@ pub fn execute(input: &Path, backend: BackendKind) -> ExitCode {
         ExitCode::from(code as u8)
     } else {
         ExitCode::from(1)
+    }
+}
+
+fn host_platform() -> Platform {
+    #[cfg(windows)]
+    {
+        Platform::Windows
+    }
+    #[cfg(not(windows))]
+    {
+        Platform::Linux
     }
 }
 

@@ -611,6 +611,25 @@ fn rewrite_statement(
         Statement::ForEach(node) => {
             rewrite_body(&mut node.body, module_index, module, table, symbols, scope)?
         }
+        Statement::Do(node) => {
+            rewrite_body(&mut node.body, module_index, module, table, symbols, scope)?;
+            for catch in &mut node.catches {
+                rewrite_body(&mut catch.body, module_index, module, table, symbols, scope)?;
+            }
+            if let Some(body) = &mut node.finally_body {
+                rewrite_body(body, module_index, module, table, symbols, scope)?;
+            }
+        }
+        Statement::Throw(error) => {
+            rewrite_expr(
+                &mut error.message,
+                module_index,
+                module,
+                table,
+                symbols,
+                scope,
+            )?;
+        }
         Statement::Return(value) => {
             if let Some(value) = value {
                 rewrite_expr(value, module_index, module, table, symbols, scope)?;

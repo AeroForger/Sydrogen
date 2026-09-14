@@ -9,6 +9,7 @@ use crate::ir::{InputKind, IrBinOp, IrInst, IrProgram, IrTerminator, Operand, Pr
 pub struct NativeX86Backend {
     pub encoder: Encoder,
     pub func_offsets: HashMap<String, usize>,
+    user_code_vaddr: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -31,6 +32,9 @@ fn inst_vregs(inst: &IrInst, uses: &mut Vec<VReg>, defs: &mut Vec<VReg>) {
         IrInst::Const { dest, .. }
         | IrInst::ConstStr { dest, .. }
         | IrInst::Input { dest, .. }
+        | IrInst::GetErrorCode { dest }
+        | IrInst::GetErrorMessage { dest }
+        | IrInst::GetErrorTypeName { dest }
         | IrInst::Param { dest, .. }
         | IrInst::LoadVar { dest, .. } => defs.push(*dest),
         IrInst::Copy { dest, src } => {
@@ -52,7 +56,16 @@ fn inst_vregs(inst: &IrInst, uses: &mut Vec<VReg>, defs: &mut Vec<VReg>) {
         | IrInst::Print { src, .. }
         | IrInst::PrintInline { src, .. }
         | IrInst::SysExit { status: src } => operand_vregs(src, uses),
-        IrInst::PrintConstStr { .. } => {}
+        IrInst::SetError {
+            code,
+            message,
+            type_name,
+        } => {
+            operand_vregs(code, uses);
+            operand_vregs(message, uses);
+            operand_vregs(type_name, uses);
+        }
+        IrInst::PrintConstStr { .. } | IrInst::ClearError => {}
     }
 }
 
@@ -129,10 +142,11 @@ fn allocate_vregs(func: &crate::ir::IrFunction) -> (HashMap<VReg, VRegLocation>,
 }
 
 impl NativeX86Backend {
-    pub fn new() -> Self {
+    pub fn new(user_code_vaddr: u64) -> Self {
         Self {
             encoder: Encoder::new(),
             func_offsets: HashMap::new(),
+            user_code_vaddr,
         }
     }
 
@@ -444,6 +458,29 @@ impl NativeX86Backend {
                             self.encoder.mov_reg_imm64(Reg::RAX, 60);
                             self.encoder.syscall();
                         }
+                        IrInst::SetError {
+                            code,
+                            message,
+                            type_name,
+                        } => {
+                            self.load_operand(Reg::RDX, code, &vreg_locations);
+                            self.load_operand(Reg::R8, message, &vreg_locations);
+                            self.load_operand(Reg::R9, type_name, &vreg_locations);
+                        }
+                        IrInst::ClearError => {
+                            self.encoder.mov_reg_imm64(Reg::RDX, 0);
+                            self.encoder.mov_reg_imm64(Reg::R8, 0);
+                            self.encoder.mov_reg_imm64(Reg::R9, 0);
+                        }
+                        IrInst::GetErrorCode { dest } => {
+                            self.store_vreg(*dest, Reg::RDX, &vreg_locations);
+                        }
+                        IrInst::GetErrorMessage { dest } => {
+                            self.store_vreg(*dest, Reg::R8, &vreg_locations);
+                        }
+                        IrInst::GetErrorTypeName { dest } => {
+                            self.store_vreg(*dest, Reg::R9, &vreg_locations);
+                        }
                     }
                 }
 
@@ -455,6 +492,9 @@ impl NativeX86Backend {
                         } else {
                             self.encoder.mov_reg_imm64(Reg::RAX, 0);
                         }
+                        self.encoder.mov_reg_imm64(Reg::RDX, 0);
+                        self.encoder.mov_reg_imm64(Reg::R8, 0);
+                        self.encoder.mov_reg_imm64(Reg::R9, 0);
                         self.restore_callee_saved();
                         self.encoder.leave();
                         self.encoder.ret();
@@ -475,6 +515,11 @@ impl NativeX86Backend {
                         pending_jumps.push((patch_jne, true_label.clone()));
                         let patch_jmp = self.encoder.jmp_rel32(0);
                         pending_jumps.push((patch_jmp, false_label.clone()));
+                    }
+                    IrTerminator::PropagateError => {
+                        self.restore_callee_saved();
+                        self.encoder.leave();
+                        self.encoder.ret();
                     }
                 }
             }
@@ -504,6 +549,35 @@ impl NativeX86Backend {
         let helper_pow_int_offset = self.encoder.emit_pow_int_helper();
         let helper_input_int_offset = self.encoder.emit_input_int_helper();
 
+        // Shared language-level uncaught-error formatter. The ELF entry stub
+        // calls this with R9 = type name and R8 = message.
+        let uncaught_error_offset = self.encoder.len();
+        self.func_offsets.insert(
+            "__sydrogen_uncaught_error".to_string(),
+            uncaught_error_offset,
+        );
+        self.encoder.push_rbp();
+        self.encoder.mov_rbp_rsp();
+        self.encoder.mov_reg_reg(Reg::RDI, Reg::R9);
+        let type_call = self.encoder.call_rel32(0);
+        pending_helper_calls.push((type_call, HelperKind::PrintStr));
+        let separator_id = get_or_insert_string(": \0", &mut string_literals, &mut string_id_map);
+        let separator_patch = emit_mov_rdi_string_ptr(&mut self.encoder);
+        string_literal_patches.push((separator_patch, separator_id));
+        let separator_call = self.encoder.call_rel32(0);
+        pending_helper_calls.push((separator_call, HelperKind::PrintStr));
+        self.encoder.mov_reg_reg(Reg::RDI, Reg::R8);
+        let message_call = self.encoder.call_rel32(0);
+        pending_helper_calls.push((message_call, HelperKind::PrintStr));
+        let newline_id = get_or_insert_string("\n\0", &mut string_literals, &mut string_id_map);
+        let newline_patch = emit_mov_rdi_string_ptr(&mut self.encoder);
+        string_literal_patches.push((newline_patch, newline_id));
+        let newline_call = self.encoder.call_rel32(0);
+        pending_helper_calls.push((newline_call, HelperKind::PrintStr));
+        self.encoder.mov_reg_imm64(Reg::RAX, 1);
+        self.encoder.leave();
+        self.encoder.ret();
+
         for (patch_pos, helper_kind) in pending_helper_calls {
             let target_offset = match helper_kind {
                 HelperKind::PrintStr => helper_print_str_offset,
@@ -517,14 +591,10 @@ impl NativeX86Backend {
         }
 
         // Emit static string payload and patch pointers
-        let base_vaddr: u64 = 0x400000;
-        let header_size: u64 = 128;
-        let stub_size: u64 = 17;
-
         let mut str_vaddrs = Vec::new();
         for s in &string_literals {
             let str_code_offset = self.encoder.len();
-            let str_vaddr = base_vaddr + header_size + stub_size + (str_code_offset as u64);
+            let str_vaddr = self.user_code_vaddr + str_code_offset as u64;
             str_vaddrs.push(str_vaddr);
             self.encoder.emit_bytes(s.as_bytes());
         }

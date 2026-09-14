@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use crate::errors::{ForgeError, ForgeResult};
 
+pub const STARTUP_STUB_SIZE: usize = 43;
+
 pub fn generate_elf64_executable(
     user_code: &[u8],
     func_offsets: &HashMap<String, usize>,
@@ -9,19 +11,31 @@ pub fn generate_elf64_executable(
     let main_offset = *func_offsets.get("Main").ok_or_else(|| {
         ForgeError::codegen("Cannot generate ELF executable without a 'Main' function")
     })?;
+    let uncaught_offset = *func_offsets
+        .get("__sydrogen_uncaught_error")
+        .ok_or_else(|| {
+            ForgeError::codegen("Cannot generate ELF executable without the error runtime")
+        })?;
 
-    // Startup stub (_start)
-    // 1. call Main (5 bytes)
-    // 2. mov rdi, rax (3 bytes)
-    // 3. mov rax, 60 (7 bytes - sys_exit)
-    // 4. syscall (2 bytes)
+    // Startup stub (_start): call Main, branch to the uncaught-error formatter
+    // when RDX is nonzero, then terminate through sys_exit.
     let mut stub = Vec::new();
     stub.push(0xE8); // call rel32
-    let target_rel = (17 + main_offset as i64) - 5;
+    let target_rel = (STARTUP_STUB_SIZE as i64 + main_offset as i64) - 5;
     stub.extend_from_slice(&(target_rel as i32).to_le_bytes());
+    stub.extend_from_slice(&[0x48, 0x85, 0xD2]); // test rdx, rdx
+    stub.extend_from_slice(&[0x0F, 0x85]); // jne uncaught
+    stub.extend_from_slice(&12i32.to_le_bytes());
     stub.extend_from_slice(&[0x48, 0x89, 0xC7]); // mov rdi, rax
     stub.extend_from_slice(&[0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00]); // mov rax, 60
     stub.extend_from_slice(&[0x0F, 0x05]); // syscall
+    stub.push(0xE8); // call uncaught formatter
+    let uncaught_rel = STARTUP_STUB_SIZE as i64 + uncaught_offset as i64 - 31;
+    stub.extend_from_slice(&(uncaught_rel as i32).to_le_bytes());
+    stub.extend_from_slice(&[0x48, 0x89, 0xC7]); // mov rdi, rax
+    stub.extend_from_slice(&[0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00]); // mov rax, 60
+    stub.extend_from_slice(&[0x0F, 0x05]); // syscall
+    debug_assert_eq!(stub.len(), STARTUP_STUB_SIZE);
 
     let header_size: u64 = 128; // 64 bytes Ehdr + 56 bytes Phdr + 8 bytes pad
     let total_code_size = (stub.len() + user_code.len()) as u64;

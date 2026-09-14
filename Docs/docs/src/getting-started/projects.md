@@ -53,6 +53,7 @@ Build a project through its `.blower` file:
 furnace build project.blower
 furnace build project.blower --backend native
 furnace build project.blower --backend cranelift
+furnace build project.blower --windows
 ```
 
 `furnace backend native` or `furnace backend cranelift` saves the default used
@@ -67,6 +68,7 @@ For a standalone source file, continue to use:
 
 ```fish
 furnace compile file.anvil linux
+furnace compile file.anvil --windows
 ```
 
 The `compile` command retains its existing single-file output behavior; it does

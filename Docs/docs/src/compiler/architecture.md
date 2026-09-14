@@ -74,7 +74,7 @@ This stage handles language-level checks such as:
 
 ## Code Generation
 
-Furnace has two code generation paths. The direct native path lowers supported programs to the internal representation in `src/ir.rs`, writes x86-64 instruction bytes, and creates an ELF64 executable. The other path in `src/codegen.rs` converts programs that need typed features to Cranelift IR and produces an object file.
+Furnace has two code generation paths. The direct native path lowers supported programs to the internal representation in `src/ir.rs`, writes x86-64 instruction bytes, and wraps them as either an ELF64 Linux executable or a PE32+ Windows executable. The other path in `src/codegen.rs` converts programs that need typed features to Cranelift IR and produces an object file.
 
 The paths share the AST and semantic analysis. The compiler selects the path after semantic analysis based on the types and statements used by the program. See [Native Code Generation](native-code-generation.md) for the direct path.
 
@@ -118,7 +118,7 @@ These layouts are implementation details of the current backend and may change i
 
 ## Linking
 
-The direct native path creates an ELF64 executable itself, so it does not call a linker.
+The direct native path creates its ELF64 or PE32+ executable itself, so it does not call a linker. Target selection is centralized in `src/backend/mod.rs`; format-specific layout stays in `src/backend/elf.rs` and `src/backend/pe.rs`.
 
 The Cranelift path generates a native object file and uses the system C compiler as the linker.
 

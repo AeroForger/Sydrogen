@@ -1941,6 +1941,11 @@ impl<'a, 'ctx> FunctionCompiler<'a, 'ctx> {
 }
 
 pub fn compile(program: &Program, obj_path: &std::path::Path, _link_math: bool) -> ForgeResult<()> {
+    if crate::backend::program_uses_error_handling(program) {
+        return Err(ForgeError::codegen(
+            "typed error handling is not yet supported by the Cranelift backend; use --backend native",
+        ));
+    }
     let mut ctx = CodeGenContext::new()?;
     let ptr_type = ctx.ptr_type;
     let function_return_kinds: HashMap<String, RetKind> = program
