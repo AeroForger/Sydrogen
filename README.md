@@ -1,82 +1,44 @@
 <p align="center">
     <img src="assets/SydrogenLogo128.png">
     <br>
-    <strong>Sydrogen, a statically typed systems programming language built in Rust.</strong>
+    <strong>Sydrogen</strong>
     <br>
-    Source files use the <code>.anvil</code> extension. The compiler is <code>Furnace</code>.
+    A statically typed, C-style systems programming language written in Rust.
     <br><br>
-    <a href="https://aeroforger.github.io/Sydrogen/"> Read the Sydrogen Book</a>
-    &nbsp;&nbsp;•&nbsp;&nbsp;
-    <a href="https://aeroforger.github.io/3d-fl/"> View Interactive 3D Logo</a>
+    <a href="https://aeroforger.github.io/Sydrogen/">Read the Sydrogen book</a>
 </p>
 
+> [!WARNING]
+> This project is discontinued and no longer maintained. It is looking for a new maintainer. If you are interested, open an issue.
 
----
+## About
 
-## What is Sydrogen?
+Sydrogen was my first real attempt at building a compiler. It is a statically typed language with C-style syntax, aimed at native programs and direct control over what the machine does.
 
-Sydrogen is a statically typed, C-style systems programming language designed for native execution and explicit control.
+The last release is **Alpha-7**. The compiler is called **Furnace**, and source files use the `.anvil` extension.
 
-**Alpha-7** uses a compiler written in **Rust**. Furnace uses **pest** for parsing, a direct x86-64 code path for supported programs, and **Cranelift** for programs that need the typed path.
+## Why the name changed
 
-### The Stack
+Sydrogen used to be called ForgeLang. Many hobby languages use that name, and I did not want this project to be mixed up with them, so I renamed it to something more specific. The code did not change.
 
-* **Compiler:** Rust
-* **Parser:** pest
-* **Code generation:** Cranelift
-* **Linking:** System C compiler (`cc`)
-* **Parallel semantic analysis:** Rayon
+## How it works
 
----
+Furnace parses the source, runs semantic checks, and then picks one of two backends.
 
-## Alpha-7 Features
+* **Native backend.** Writes x86-64 machine code directly and produces an ELF64 (Linux) or PE32+ (Windows) executable. It does not call an external linker.
+* **Cranelift backend.** Used for programs that need typed features the native backend does not support yet. It writes an object file and links it with the system C compiler (`cc`).
 
-## Native Code Generation
+Both backends share the parser, the AST, and the semantic analysis. The split happens after checking.
 
-Furnace has a direct native code path for a supported subset of Sydrogen. It writes x86-64 instructions and creates an ELF64 Linux or PE32+ Windows executable without first creating an object file or calling an external linker.
+The stack is:
 
-The compiler chooses the path after parsing and semantic analysis:
+* Compiler: Rust
+* Parser: pest
+* Code generation: Cranelift
+* Linking: system C compiler (`cc`)
+* Semantic analysis: Rayon for parallel checks
 
-```mermaid
-flowchart TD
-    A(Sydrogen source) --> B(Parser)
-    B --> C(AST)
-    C --> D(Semantic analysis)
-    D --> E(Direct native path)
-    E --> F(Internal IR)
-    F --> G(x86-64 bytes)
-    G --> H(ELF64 or PE32+ executable)
-    D --> I(Cranelift path)
-    I --> J(Object file)
-    J --> K(cc)
-    K --> L(Executable)
-```
-
-The direct path handles integer, Boolean, and `Weld` values, integer input, strings used by printing, arithmetic, comparisons, branches, loops, function calls, and `Program.Stop()`.
-
-Programs that use floats, arrays, tuples, lists, or other typed features use the Cranelift path. That path writes an object file and uses `cc` to make the final executable.
-
-### Direct Native Path
-
-`src/lowering.rs` converts the checked AST into the internal representation in `src/ir.rs`. The representation contains virtual registers, stack variables, basic blocks, arithmetic and comparison instructions, calls, and branch terminators.
-
-`src/backend/x86_64/mod.rs` assigns virtual registers to x86-64 registers or stack slots. Function arguments use `RDI`, `RSI`, `RDX`, `RCX`, `R8`, and `R9`. Function results use `RAX`.
-
-`src/backend/x86_64/encoder.rs` writes instruction bytes for moves, integer operations, comparisons, calls, returns, jumps, and the function stack frame. It records calls and jumps whose destinations are not known yet. After all functions are written, Furnace fills in those relative addresses and embeds string data.
-
-`src/backend/elf.rs` writes the Linux ELF64 layout, while `src/backend/pe.rs` writes the Windows PE32+ layout. Each format supplies its own aligned headers and startup entry point around the shared generated x86-64 functions.
-
-### Typed Code Path
-
-Programs that need floats or collection types use `src/codegen.rs`. Cranelift produces the object file, Furnace adds its C runtime helpers, and `cc` links the object and runtime into an executable.
-
-Both paths share parsing, the AST, and semantic analysis. The difference begins after the program has been checked.
-
-### Direct Path Limits
-
-The direct path currently supports x86-64 output, at most six integer function arguments, integer input, and integer, Boolean, and `Weld` function values. It does not directly generate code for floats, arrays, tuples, lists, `Data`, or objects. Imports resolve before backend selection and work with both paths.
-
-### The Language
+## Example
 
 ```forge
 Nunction Tick()
@@ -114,28 +76,19 @@ Open Nunction Main()
 }
 ```
 
-Alpha-7 currently supports:
+## Language features in Alpha-7
 
-* **Types:** `Number`, `Int`, `Float`, `Weld`, `String`, `Bool` / `Boolean`
-* **Control flow:** `If`, `Else If`, `Else`, `While`, `For`
-* **Functions:** `Nunction`, `function`, parameters, return values, and native function calls
-* **Strings:** Plain strings and `\V` interpolation
-* **Arrays:** Fixed-size `Ore` arrays
-* **Tuples:** Named-field `Ore` tuples
-* **Lists:** `Materials`
+* **Types:** `Number`, `Int`, `Float`, `Weld`, `String`, `Bool` and `Boolean` (same type)
+* **Control flow:** `If`, `Else If`, `Else`, `While`, `For`, `Switch`
+* **Functions:** `Nunction` or `function`, parameters, return values
+* **Strings:** plain strings and `\V` interpolation
+* **Collections:** fixed-size arrays (`Ore`), named tuples (`Ore`), and lists (`Materials`)
 * **Input:** `Input(Int)`, `Input(Float)`, `Input(Weld)`
-* **Arithmetic:** `+`, `-`, `*`, `/`, `%`, `**`
-* **Unary operators:** `+`, `-`
-* **Comparisons:** `<`, `>`, `<=`, `>=`, `==`, `!=`
-* **Bitwise operators:** `And`, `Or`, `Xor`
-* **Loop control:** `Stop`
-* **Runtime exit:** `Program.Stop()`
+* **Operators:** `+`, `-`, `*`, `/`, `%`, `**`, comparisons, and bitwise `And`, `Or`, `Xor`
+* **Errors:** `Do`, `Catch`, `Finally`, `Throw` (native backend only)
+* **Exit:** `Stop` for loops and `Program.Stop()` for the program
 
-### Boolean Type
-
-Sydrogen provides a Boolean type with two values: `true` and `false`.
-
-The keywords `Bool` and `Boolean` refer to the same type and can be used interchangeably.
+### Booleans
 
 ```forge
 Open Nunction Main()
@@ -151,44 +104,17 @@ Open Nunction Main()
 }
 ```
 
-A `Bool` variable can only be assigned `true`, `false`, or another compatible Boolean value. The compiler rejects assignments of integers, floats, or strings to `Bool` variables.
+Assigning an integer, float, or string to a `Bool` is a compile error.
 
-Printing a Boolean value outputs `true` or `false`.
+## Building
 
-### Parallel Semantic Analysis
+You need:
 
-Furnace contains a semantic analysis stage using **Rayon**.
+1. Rust, installed with `rustup`
+2. A C linker such as `gcc`, `clang`, or `cc`
+3. The math library, which normally comes with the C toolchain
 
-The semantic stage checks the parsed program before code generation. Independent parts of the AST can be analyzed concurrently.
-
-It currently checks things including:
-
-* Function argument counts
-* `Main` parameters
-* Undefined variables
-* Shared-member access
-* Shared-member mutation
-* Invalid collection operations
-* Array size mismatches
-* Tuple field counts
-* List element types
-* Boolean type compatibility
-* Invalid `Stop` usage
-* Invalid `Program.Stop()` usage
-
----
-
-## Getting Started
-
-### Prerequisites
-
-1. **Rust** installed through `rustup`
-2. **A C linker**, such as `gcc`, `clang`, or `cc`
-3. **The math library**, normally provided by the system C toolchain
-
-### Building Furnace
-
-Clone the repository and build the compiler:
+Clone the repository and build:
 
 ```fish
 git clone https://github.com/AeroForger/Sydrogen.git
@@ -196,177 +122,49 @@ cd Sydrogen
 cargo build --release
 ```
 
-The compiler binary will be located at:
+The binary is at `target/release/furnace`.
 
-```text
-target/release/furnace
-```
+To build Alpha-7 specifically, check out its tag or commit before building. The `install.sh` script installs the newest tag, which may not be Alpha-7.
 
-### Compiling a Program
-
-The current CLI uses:
+## Usage
 
 ```fish
+# Compile for Linux (default)
 ./target/release/furnace compile main.anvil linux
+
+# Compile a Windows executable
 ./target/release/furnace compile main.anvil --windows
-```
 
-Furnace parses the source and performs semantic analysis, then selects the direct native path or the Cranelift path. Linux/ELF64 is the default. `--windows` selects direct native Windows x86-64 output and writes a PE32+ `.exe`, including when Furnace runs on Linux. The Cranelift path generates an object file and links it using the system C toolchain.
-
-### Running a Program
-
-```fish
+# Compile and run
 ./target/release/furnace run main.anvil
-```
 
-### Persistent Backend Selection
-
-Save the default backend with:
-
-```fish
-./target/release/furnace backend native
-./target/release/furnace backend cranelift
-```
-
-Available backends:
-
-* `native` writes a direct x86-64 ELF64 or PE32+ executable.
-* `cranelift` writes a native object file and links it with `cc`.
-
-The selection persists across Furnace invocations and is used by `build`,
-`compile`, and `run`. Cranelift is the built-in default when no preference has
-been saved.
-
-Use `--backend` with `build`, `compile`, or `run` to override the saved choice
-for one command:
-
-```fish
-./target/release/furnace build project.blower --backend native
+# Choose a backend for one command
 ./target/release/furnace compile main.anvil linux --backend native
 ./target/release/furnace run main.anvil --backend cranelift
-./target/release/furnace compile main.anvil --windows
-```
 
-### Creating a Project
+# Save a default backend
+./target/release/furnace backend native
+./target/release/furnace backend cranelift
 
-Create a console project with:
-
-```fish
+# Create a console project
 ./target/release/furnace new console -n Project
 ```
 
-This creates:
+Cranelift is the default when no backend has been saved.
 
-```text
-Project/
-└── Project.anvil
-```
+## Known limitations
 
-The generated source contains a minimal `Open Nunction Main()` program.
+These are the limits at Alpha-7.
 
----
+* The native backend supports integers, Booleans, `Weld` values, integer input, string printing, arithmetic, comparisons, branches, loops, and function calls. Floats, arrays, tuples, lists, `Data`, and objects need the Cranelift backend.
+* The Windows backend does not yet implement `Print`, `Input`, `Program.Stop()`, or uncaught-error messages.
+* `Do`, `Catch`, `Finally`, and `Throw` run only on the native backend.
+* `Finally` does not run when `Stop` or `Skip` leaves a protected block.
+* Division by zero raises an error automatically. Automatic `Error.Overflow` and `Error.IO` conversion was not finished.
+* `Deal` is reserved but has no pattern-matching behavior.
+* Full lexical scope and shadowing, garbage collection, a package manager, multicore execution, and self-hosting were not implemented.
 
-## Architecture
-
-The compiler is divided into several stages:
-
-1. **Parser (`pest`)**
-   Reads `.anvil` source code and produces an AST.
-
-2. **AST (`ast.rs`)**
-   Stores the program in strongly typed Rust structures.
-
-3. **Semantic Analysis (`semantic.rs`)**
-   Checks the AST before code generation.
-
-4. **Code Generation**
-   Selects the direct x86-64 path for supported programs or the Cranelift path for programs that need typed features.
-
-5. **Output**
-   The direct path writes an ELF64 or PE32+ executable. The Cranelift path writes an object file and uses the system C compiler to produce an executable.
-
-The overall pipeline runs in this order:
-
-```mermaid
-flowchart LR
-    A(Sydrogen source) --> B(pest parser)
-    B --> C(AST)
-    C --> D(Module resolution)
-    D --> E(Semantic analysis)
-    E --> F(Direct x86-64 path or Cranelift path)
-    F --> G(Executable)
-```
-
----
-
-## Current Limitations
-
-Alpha-7 is still under development.
-
-The direct native backend currently supports x86-64 integer, Boolean, and
-`Weld` values. Linux programs that require floats, collections, `Data`, or
-objects use the Cranelift and system-linker path instead. Those typed features
-are not yet available for PE32+ output.
-
-The Windows backend produces PE32+ executables and supports variables,
-arithmetic, comparisons, control flow, `Switch`, function calls, and caught
-typed errors. Its runtime does not yet implement `Print`, `Input`,
-`Program.Stop()`, or top-level uncaught-error messages.
-
-Other current limitations are:
-
-* Typed `Do` / `Catch` / `Finally` / `Throw` execution is implemented by the
-  direct native backend but not yet by Cranelift.
-* `Finally` runs for normal completion, `Return`, and propagated errors, but
-  not yet when `Stop` or `Skip` leaves a protected block.
-* Division by zero is raised automatically. Automatic `Error.Overflow` and
-  `Error.IO` conversion is still planned; both can currently be thrown
-  explicitly.
-* `Switch` supports exact `Int`, `Float`, and `Bool` cases without fallthrough.
-  The reserved `Deal` keyword does not yet have defined pattern-matching
-  semantics.
-* Full lexical scope and shadowing, garbage collection, package management,
-  multicore program execution, and self-hosting are not implemented.
-
-For the complete language reference and current implementation details, see **[The Sydrogen Programming Language Book](https://aeroforger.github.io/Sydrogen/)**.
-
----
-
-## Roadmap
-
-### Short Term
-
-* Add Cranelift execution for `Do`, `Catch`, `Finally`, and `Throw`.
-* Complete `Finally` unwinding for `Stop` and `Skip`, and add automatic
-  overflow and I/O error conversion.
-* Add a Windows runtime for console output, input, process termination, and
-  uncaught-error reporting.
-* Improve lexical scope and shadowing diagnostics.
-* Expand the systems-level standard library.
-
-### Mid Term
-
-* Extend direct native code generation to floats, collections, `Data`, and
-  objects, including PE32+ support for those types.
-* Define whether `Deal` extends `Switch` with richer pattern matching.
-* Expand generic data types and generic function support.
-* Add language-level multicore program execution.
-
-### Long Term
-
-* **Scrap:** Optional garbage collector.
-* **Ironwork:** Sydrogen package manager.
-* **Self-hosting:** Rewrite Furnace in Sydrogen for the 2.0 generation.
-
----
-
-## Documentation
-
-The complete Sydrogen language reference is available in **The Sydrogen Programming Language Book**.
-
-**[Read the book](https://aeroforger.github.io/Sydrogen/)**
-
----
+For the full language reference, see the [Sydrogen book](https://aeroforger.github.io/Sydrogen/).
 
 ## License
 
